@@ -1,10 +1,146 @@
 {
   "type": "pes6pkg-index",
   "schema": 1,
-  "serial": 2,
-  "issued": "2026-11-21T21:47:18Z",
-  "expires": "2027-02-19T21:47:18Z",
+  "serial": 3,
+  "issued": "2026-11-21T21:55:57Z",
+  "expires": "2027-02-19T21:55:57Z",
   "packages": [
+    {
+      "package": "hdtext",
+      "name": "PES6 HD Text",
+      "version": "1.0.2",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6-hd-text/releases/tag/v1.0.2",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2/hdtext-1.0.2.manifest.json",
+        "size": 14937,
+        "sha256": "3b91c796f98e0a75bbe972d011b8b52d1ff3313a83188cd46d1b5574fed82beb"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2/PES6_HD_Text_v1.0.2.zip",
+        "size": 47624535,
+        "sha256": "b09cd7564aba163f3d8f617de90dcce0b4410173e566742ee8bffe63908fcf38"
+      }
+    },
+    {
+      "package": "translation-el",
+      "name": "Ελληνικά",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/el-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/el-v1.0/translation-el-1.0.manifest.json",
+        "size": 871,
+        "sha256": "ee1ef4e95fc520966b566b4cd6657d3ee626c153cb1992103a061668ec71b420"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/el-v1.0/PES6_Translation_el_v1.0.zip",
+        "size": 24350430,
+        "sha256": "6b9ed2385a4fa63562a12adee60812b1d5f3bacdc5fbab42ea111ba52bbf5544"
+      }
+    },
+    {
+      "package": "translation-hr",
+      "name": "Hrvatski",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/hr-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/hr-v1.0/translation-hr-1.0.manifest.json",
+        "size": 863,
+        "sha256": "6c1d68eead2370bddc577438fdf2e3ea96019cd8d8da998fc76d75f4f4defc2e"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/hr-v1.0/PES6_Translation_hr_v1.0.zip",
+        "size": 24309119,
+        "sha256": "2b994101c8aa3d0e8003aa2079942336f598030f8d472084a95595bcf84c576c"
+      }
+    },
+    {
+      "package": "translation-id",
+      "name": "Bahasa Indonesia",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/id-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/id-v1.0/translation-id-1.0.manifest.json",
+        "size": 871,
+        "sha256": "338b005dfd78c03cab83233dd0f42ee8d0b62607e8e6249c68660efe665024d3"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/id-v1.0/PES6_Translation_id_v1.0.zip",
+        "size": 24292933,
+        "sha256": "c7abbf45c25a7630b3db5d84f7334805895856b7babe20c7fb8dd540d22ad23c"
+      }
+    },
+    {
+      "package": "translation-pt-br",
+      "name": "Português (Brasil)",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/pt-br-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/pt-br-v1.0/translation-pt-br-1.0.manifest.json",
+        "size": 886,
+        "sha256": "fa00e6dcfc7797d00778dad62d9826c22ab1e4c88f0b157611394b0cf056adac"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/pt-br-v1.0/PES6_Translation_pt-br_v1.0.zip",
+        "size": 24308523,
+        "sha256": "29ee20f6ff66324b716247f458231c38ccf21b5e807f6e0e1e22b5e90e1c4079"
+      }
+    },
+    {
+      "package": "translation-ru",
+      "name": "Русский",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/ru-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/ru-v1.0/translation-ru-1.0.manifest.json",
+        "size": 869,
+        "sha256": "7a2cfe9249f738791c32ec5b9d906cd4afaf3e004420642efc74db278c41c591"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/ru-v1.0/PES6_Translation_ru_v1.0.zip",
+        "size": 24338671,
+        "sha256": "c6a2020307222fd3f835c9c498adc91c6aa435ca0f225f2061475e17aa2b5562"
+      }
+    },
+    {
+      "package": "translation-sr",
+      "name": "Srpski",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/sr-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/sr-v1.0/translation-sr-1.0.manifest.json",
+        "size": 861,
+        "sha256": "d91c2fcddefcb0385470b91f76b27713ea6dbadb5554a8491a71bf24212c2ed4"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/sr-v1.0/PES6_Translation_sr_v1.0.zip",
+        "size": 24307589,
+        "sha256": "c1299c57218ec15eb08ebe5aa693d3b2a3022d7ece767fdcf203e63a3dd3a84c"
+      }
+    },
+    {
+      "package": "translation-tr",
+      "name": "Türkçe",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/tr-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/tr-v1.0/translation-tr-1.0.manifest.json",
+        "size": 863,
+        "sha256": "a0042f2ff343f192e93bfe9b08e04e558beb48629a1d54c9bbe339c235321c8e"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/tr-v1.0/PES6_Translation_tr_v1.0.zip",
+        "size": 24306899,
+        "sha256": "f895f6d70bb764371b5d12f3115b535f912456a27e35209236794b52ed9b1604"
+      }
+    },
     {
       "package": "translations",
       "name": "PES6 Translations",

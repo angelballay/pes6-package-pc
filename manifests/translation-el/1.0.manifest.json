@@ -1,0 +1,38 @@
+{
+  "type": "pes6pkg-manifest",
+  "schema": 1,
+  "package": "translation-el",
+  "name": "Ελληνικά",
+  "version": "1.0",
+  "released": "2026-11-21",
+  "requires": [
+    {
+      "package": "hdtext",
+      "min": "1.0.2"
+    },
+    {
+      "package": "translations",
+      "min": "1.0"
+    }
+  ],
+  "files": [
+    {
+      "path": "dat/el_text.afs",
+      "size": 24844288,
+      "sha256": "ec43dd5adc3930a49a837be030ecc0fde2df58420e9febc4d6356d3b44beaecf",
+      "install": true
+    },
+    {
+      "path": "Docs/translation-el/README.txt",
+      "size": 1917,
+      "sha256": "2bd3b26f35e3bb6b165fbdf84a1903442801de79212210fac20d709d5f2286b3",
+      "install": false
+    },
+    {
+      "path": "Docs/translation-el/LEEME.txt",
+      "size": 1898,
+      "sha256": "736ea94ee6a303a98522ce513cd38ecfbbd65bc6c3735ca0eae2e7b1c7168654",
+      "install": false
+    }
+  ]
+}

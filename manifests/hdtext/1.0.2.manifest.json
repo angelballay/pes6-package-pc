@@ -1,0 +1,461 @@
+{
+  "type": "pes6pkg-manifest",
+  "schema": 1,
+  "package": "hdtext",
+  "name": "PES6 HD Text",
+  "version": "1.0.2",
+  "released": "2026-11-21",
+  "requires": [],
+  "files": [
+    {
+      "path": "Kitserver/pes6_hd_text.dll",
+      "size": 348160,
+      "sha256": "2d263b5160f78330b6f2a4c9ed25d5b468710b81f596fc9eae7d70d90d682824",
+      "install": true
+    },
+    {
+      "path": "Kitserver/hdtext.exe",
+      "size": 614400,
+      "sha256": "856b8265afb2725f147c5dbf3169e0749b867ed765a46f1d0f379b366a45f7eb",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_barlow_condensed.bin",
+      "size": 1342832,
+      "sha256": "366b9fc4e4aa7d8b6758b1e3f6465a7038e9d1b50facff368e4671494a977ea7",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_chakra_petch.bin",
+      "size": 1342934,
+      "sha256": "fedccdb1fe95de4884241fdc05e6d80cfd9f413854561c84e3238e13e64c0ad7",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_dosis.bin",
+      "size": 1342861,
+      "sha256": "aa8a63a817e0a2bfab695dfdab513ac37f1b4e62e8a68747db5ac168d2f063e4",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_dynapuff.bin",
+      "size": 1363126,
+      "sha256": "7043fb1bf1cda9a1dc303d4790ee6e68be322b8fcc9736450136e8b9847ad9d3",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_fira_sans.bin",
+      "size": 1374240,
+      "sha256": "eab59f5d2ee66ad6756f8c9691236fb3734352621000b3360af899b72fa17f34",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_futuristic.bin",
+      "size": 1342361,
+      "sha256": "85243b77ab3a997c200684b66576702e30151bedafa29f07d7a8db5de8a38bc0",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_hachimaru.bin",
+      "size": 1353635,
+      "sha256": "5e33071b7b7ece53ecc67ad264605a3273297e894e00a959c8e293c82908e5c9",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_humanist.bin",
+      "size": 1380264,
+      "sha256": "ce5c168ceed66dc95f255ec1e9acf51320b4c1be493a64eedd14cb687340396b",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_kablammo.bin",
+      "size": 1343168,
+      "sha256": "dc8b8bfb550bac2457281ba790b33a00f28e4ddca1c2cac19df86baa30652a38",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_kanit.bin",
+      "size": 1346272,
+      "sha256": "a08916d67f6b178e25a8e398365707847e3d55394a355939e7c300c88b105b27",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_luckiest.bin",
+      "size": 1352217,
+      "sha256": "274294fb8faa1e4599a417b97778146affd699f04d3330659f3b46860b58fe0f",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_marhey.bin",
+      "size": 1346546,
+      "sha256": "a1e87fcf9e7851634bc4eb412f3a293623a38c8b0117f3753f18fe939c494ff3",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_marker.bin",
+      "size": 1337672,
+      "sha256": "5e2af47abc9a2eac65fe8b59b4d334f0c0ce40e0535ed06e3bc40f02ecb79c02",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_montserrat.bin",
+      "size": 1368921,
+      "sha256": "c7bb8508b2e7bc8096ed8a427c79f68ca4d443b3260f9b4685022ae7e0e6e0d1",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_nabla.bin",
+      "size": 1342459,
+      "sha256": "8101c3a5f5cc8f3782fa59392dea468ae68d30e1697e24a6be5c70c076a45b40",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_neon_lines.bin",
+      "size": 1359611,
+      "sha256": "7614b6cb14c30410c13ba2243d7527ab6af9f5fa5986ec24a510290d5aa8b725",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_original_font.bin",
+      "size": 1375941,
+      "sha256": "9da5658f4d062dfbd8401404899dc82bec40000065ae22b1bd084e6f2221bdbe",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_oswald.bin",
+      "size": 1355168,
+      "sha256": "e96d08733985e48b0d34167f10e9912e5d8fb1a90843753a522a38f03b3eec5f",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_pixel.bin",
+      "size": 1307150,
+      "sha256": "c06f09bb7362aea5806e3602ad078634c48d8ad8126f68f72a233429f63d7bd7",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_poster_deco.bin",
+      "size": 1341365,
+      "sha256": "96c6fcecff7deb05a12e5949779201d596ae39f478fdc00f5640e13012fef3a6",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_rajdhani.bin",
+      "size": 1341034,
+      "sha256": "23ea7ec649e7843ec8be70497a7e8b6935e6f4977543f5add08b26f17f1e437d",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_retro.bin",
+      "size": 1343311,
+      "sha256": "90137e1d8488fc87a2b4800e38dc246ee78fe002cdcd77aab8cfb29389edb494",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_rubik.bin",
+      "size": 1367606,
+      "sha256": "67f49f6c8849e2a42d3bf4d019506951f7ee3d458e93752704a3b6c4fae9d67d",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_semi_condensed.bin",
+      "size": 1343625,
+      "sha256": "2220763e7493ce78c566b88aef49c2058a32b002366a73a3eb03bb0f51ca23b7",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_shrikhand.bin",
+      "size": 1360071,
+      "sha256": "ef4a5c5a4ed946076f31af0da6bd9c4946be56253b3241f11cecf653a63346a1",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_snowflake.bin",
+      "size": 1346279,
+      "sha256": "afbb66559180427b3ced99b4b165756ad812e952e3222f026ef714558a6b8ea7",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_speed.bin",
+      "size": 1351942,
+      "sha256": "a18f908b95501623f41ebc8da7b842c620825d2968b6d4a111e9600db2392fa0",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_squared.bin",
+      "size": 1326515,
+      "sha256": "5667b3b4355a4032748d6aa1f399c3c1d87dde70ce9a77d3f134ed934fc2728f",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_stencil.bin",
+      "size": 1345567,
+      "sha256": "16f170a2e8684dae3af6a975b178134fb64eb52a9d728a2c96d784d7bb4a5397",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_storybook.bin",
+      "size": 1334463,
+      "sha256": "2c20d726fde0e07e902fed0883a17781d1cea0957aee9a391abb70c52099086c",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_teko.bin",
+      "size": 1332704,
+      "sha256": "66a44aa14c9cc315f08a0a4c58f72e9f5a9011f89a6e068a6fe2ddc9a96cb9de",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_titillium.bin",
+      "size": 1343579,
+      "sha256": "1c8a35093993eab145feb1236c1337efd9a74d1f2e2bea2d55bc01f9687f9f49",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_tokyo_zoo.bin",
+      "size": 1334338,
+      "sha256": "24f4e3901ed67c4c5161274e1aeaf3254d0a6f98997b2bc82b03d3e3de4b225c",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_train.bin",
+      "size": 1221543,
+      "sha256": "f47f62f4a31a7de0ac8125a645f24bbbeb3bb7064c5be41ada5063ba9ec30683",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/HD_wide.bin",
+      "size": 1332226,
+      "sha256": "5ce8bacb5f1fc71fa3529ff366fa740429a8646a93cb2995182f65adfb6e2699",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/FONT_LICENSES.txt",
+      "size": 3580,
+      "sha256": "53ac309171252fc38629f67622f7ed6d17d437516e9a919b211f08a11a14e864",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/LICENSE_Apache-2.0.txt",
+      "size": 11560,
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_audiowide.txt",
+      "size": 4523,
+      "sha256": "ad9197c04efebe645b65871f8f8e5028a861bd9a3bf0e91a366dfbe2e85c1754",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_barlowcondensed.txt",
+      "size": 4470,
+      "sha256": "b4cc842153e834885f3f9385ce26de4e1213d3ffbe473a6c0519e5522a8e3608",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_blackopsone.txt",
+      "size": 4504,
+      "sha256": "3a51a576336e7a40590ac607375d6033ad249911d10c3e54d55d84dccb3c35b8",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_chakrapetch.txt",
+      "size": 4489,
+      "sha256": "af39909c36b215eef56267c54843b6ffa9d2a81a8850fdeffde82bd9e4c58238",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_dosis.txt",
+      "size": 4479,
+      "sha256": "dcfc5e3f68c01da6ed153a746b972fb5d50176f1db06c126abe22dacedd2bffb",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_dynapuff.txt",
+      "size": 4596,
+      "sha256": "2480d5506ffd28e3d00cd67ac69e56f7d7fcbf0012c5fe8fa9160c6577e1b90d",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_fasterone.txt",
+      "size": 4508,
+      "sha256": "4da248dc81a7ea4cf5b23f9cf7a0f8cad900875b3f52a928befb5c51e82e9438",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_firasans.txt",
+      "size": 4463,
+      "sha256": "408380eae7cba50c9f6ca1c030590178dbbd410a94bef8bfe7f46edf46eb8a9b",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_hachimarupop.txt",
+      "size": 4495,
+      "sha256": "8391f0deaa4cbcb74d688aeb44ec209b61acecbb24cc0bbcf33d2c49e7be5df5",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_hennypenny.txt",
+      "size": 4782,
+      "sha256": "8dbd154c09c3884065fe284ea111468a4188c954a68cd97c1d9750e62df76c2f",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_kablammo.txt",
+      "size": 4490,
+      "sha256": "eb113c741d7dc80647fed37410c1bebf25f800eccc8149bf1d7b4e3c40e84fd8",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_kanit.txt",
+      "size": 4476,
+      "sha256": "4f79407f338031270a715c2437ead0af5d7c90c3d3127182938f6b90b0e9b849",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_lato.txt",
+      "size": 4500,
+      "sha256": "14b8609fd8281cb961730de7d3b2964dcc6e0e395e759b1422e52e39a0fdc6b2",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_marhey.txt",
+      "size": 4477,
+      "sha256": "096744f008d418398e0b72ce8d4c46f195c036600a7a48df256ac95e026a79dc",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_monoton.txt",
+      "size": 4495,
+      "sha256": "a82d2307b263a54f7a6bcce1b704c337f3bfe128e2ad3f6b3a14fa915fcd315f",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_montserrat.txt",
+      "size": 4492,
+      "sha256": "41cbef8d8a37b9e58a3c613a8958014bfc58801569c40211dfb251f600c6d718",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_nabla.txt",
+      "size": 4478,
+      "sha256": "580a2f3264d69e07e2ae3325150edb80b6ccabff07678342eaca0b2ccecebcf1",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_oswald.txt",
+      "size": 4483,
+      "sha256": "0fd731a904b729a4e02eaf5e8ebd06783edd9abe400e8882760160230675b652",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_plaster.txt",
+      "size": 4491,
+      "sha256": "42437580e0959b9d929593ff9c06d6e724c65b9831d139418ca4870cc3676899",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_pressstart2p.txt",
+      "size": 4505,
+      "sha256": "004fc993a3bdaaf0fd443cb58d7e5c2fd09fc3a93b23309d0005421f7b8b7123",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_quantico.txt",
+      "size": 4515,
+      "sha256": "ef56b274853036fb8e28ca597ded452b7427cb532362a666e591dd56814e8060",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_rajdhani.txt",
+      "size": 4466,
+      "sha256": "bb36ea0b5e02431f0372edde87b029ceb071806f5296c4ffb38756850a54e2ed",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_revalia.txt",
+      "size": 4547,
+      "sha256": "8f46f88d77b483b0cc760f349178afeca357b84edf2ca0393882b57662b4a419",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_righteous.txt",
+      "size": 4526,
+      "sha256": "d5732792ba174a1e902b5b60110cb43dba5fae9df2ed6c07c3bfddde9b07268c",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_rubik.txt",
+      "size": 4477,
+      "sha256": "adc65fd853d8a24e2ca8aba1f9483198cb436203ad9c9ef27e08c11fe27e25a4",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_sairasemicondensed.txt",
+      "size": 4496,
+      "sha256": "66256bcb8bc40414cb237a05ed0a4c2ec116c8907923a5d7fd90d4dd95586ded",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_shrikhand.txt",
+      "size": 4463,
+      "sha256": "325e890b8b26fe0a683c3ba24c506d902bdd7034d9c47bd7fa2bb72b5433b9c9",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_snowburstone.txt",
+      "size": 4491,
+      "sha256": "e28fb9faf82a71ddd43a12cad9034e21ae0e4552d064e27fb1372f451553411c",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_teko.txt",
+      "size": 4478,
+      "sha256": "c61db864c668514b03b60d4185313feff06dee3ab8b6e304bdb9a3216765fc4a",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_titilliumweb.txt",
+      "size": 4523,
+      "sha256": "c0562e066174197902a4a10606673d189f067970ef89c6013943b9cf182aadbc",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_trainone.txt",
+      "size": 4481,
+      "sha256": "709f9689eabbab61e913ddc288187e7e3d09550339f7df894a909548f90af814",
+      "install": true
+    },
+    {
+      "path": "Kitserver/GDB/fonts/licenses/OFL_zentokyozoo.txt",
+      "size": 4486,
+      "sha256": "02346d462d1f7f8f96580e96ecef8ca4e5bcf7f6e6411c1e146fdd5b9f4748b3",
+      "install": true
+    },
+    {
+      "path": "README.txt",
+      "size": 10068,
+      "sha256": "06bacc27dbebe7fba89494737e66b70661b23abec79c13b5d6e828ce6308900f",
+      "install": false
+    },
+    {
+      "path": "LEEME.txt",
+      "size": 10588,
+      "sha256": "55acf53843a6b1ef7473ab2056517b102b3198ce2b969b6d6ac233c4efdeb5b6",
+      "install": false
+    },
+    {
+      "path": "CHANGELOG.md",
+      "size": 11645,
+      "sha256": "6099514a130ab07b67fb7dba7119e70959a13f004b7ca4861c46d3890021c27e",
+      "install": false
+    },
+    {
+      "path": "LICENSE.txt",
+      "size": 1631,
+      "sha256": "22dc473b9789cc8cd62bebf4b4f9658b4bdce48009c4a9614b7faddb7a2a8f8e",
+      "install": false
+    }
+  ]
+}

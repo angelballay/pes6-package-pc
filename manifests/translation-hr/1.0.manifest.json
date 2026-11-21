@@ -1,0 +1,38 @@
+{
+  "type": "pes6pkg-manifest",
+  "schema": 1,
+  "package": "translation-hr",
+  "name": "Hrvatski",
+  "version": "1.0",
+  "released": "2026-11-21",
+  "requires": [
+    {
+      "package": "hdtext",
+      "min": "1.0.2"
+    },
+    {
+      "package": "translations",
+      "min": "1.0"
+    }
+  ],
+  "files": [
+    {
+      "path": "dat/hr_text.afs",
+      "size": 24799232,
+      "sha256": "e6e4a5acf0780fdbffa06175f3153be27bd0bacb23176aa06c43e6062767ed7f",
+      "install": true
+    },
+    {
+      "path": "Docs/translation-hr/README.txt",
+      "size": 1917,
+      "sha256": "2bd3b26f35e3bb6b165fbdf84a1903442801de79212210fac20d709d5f2286b3",
+      "install": false
+    },
+    {
+      "path": "Docs/translation-hr/LEEME.txt",
+      "size": 1898,
+      "sha256": "736ea94ee6a303a98522ce513cd38ecfbbd65bc6c3735ca0eae2e7b1c7168654",
+      "install": false
+    }
+  ]
+}

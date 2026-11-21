@@ -1,0 +1,38 @@
+{
+  "type": "pes6pkg-manifest",
+  "schema": 1,
+  "package": "translation-tr",
+  "name": "Türkçe",
+  "version": "1.0",
+  "released": "2026-11-21",
+  "requires": [
+    {
+      "package": "hdtext",
+      "min": "1.0.2"
+    },
+    {
+      "package": "translations",
+      "min": "1.0"
+    }
+  ],
+  "files": [
+    {
+      "path": "dat/tr_text.afs",
+      "size": 24801280,
+      "sha256": "4f251a6200e18b4f504dd6cafcbb4a4c785978691b0f2e6839a19e89f45ab09e",
+      "install": true
+    },
+    {
+      "path": "Docs/translation-tr/README.txt",
+      "size": 1917,
+      "sha256": "2bd3b26f35e3bb6b165fbdf84a1903442801de79212210fac20d709d5f2286b3",
+      "install": false
+    },
+    {
+      "path": "Docs/translation-tr/LEEME.txt",
+      "size": 1898,
+      "sha256": "736ea94ee6a303a98522ce513cd38ecfbbd65bc6c3735ca0eae2e7b1c7168654",
+      "install": false
+    }
+  ]
+}
