@@ -314,6 +314,38 @@ class Plan:
         return self.doc['serial']
 
 
+@dataclass
+class Item:
+    """Un paquete de una tanda de `publish`: `from_dir` para armarlo si falta, `notes` para el release."""
+    package: str
+    version: str
+    from_dir: Path = None
+    notes: Path = None
+
+    @property
+    def spec(self):
+        return f'{self.package}@{self.version}'
+
+
+def parse_spec(s):
+    """`paquete@versión` -> (paquete, versión)."""
+    if s.count('@') != 1 or not all(s.split('@')):
+        raise SystemExit(f'{s!r}: tiene que ser <paquete>@<versión> (por ejemplo translation-ru@1.0).')
+    return tuple(s.split('@'))
+
+
+def batch_order(items):
+    """El orden de una tanda: translations primero (va adentro de cada idioma), los idiomas, y el resto al final
+    (HD Text: su pestaña Languages lista los idiomas del índice). Dentro de cada grupo, el orden dado."""
+    def rank(it):
+        return 0 if it.package == 'translations' else 1 if model.translation_code(it.package) else 2
+    return sorted(items, key=rank)
+
+
+def size_label(n):
+    return f'{n / 1048576:.1f} MB' if n >= 1048576 else f'{max(1, round(n / 1024))} KB'
+
+
 class Publisher:
     """Los pasos de `release`, `index add` y `renew`. La CLI lo arma con lo real; las pruebas, con un remoto git local,
     un gh falso y claves de prueba.
@@ -367,11 +399,11 @@ class Publisher:
             bundled.append(bb)
         return Built(info, folder, asset_files(folder, info), package.index_entry(info), manifest, bundled)
 
-    def bundle_problems(self, b: Built):
+    def bundle_problems(self, b: Built, coming=()):
         """Lo que trae adentro (por ejemplo, translations dentro de un idioma) tiene que estar publicado e igual: si
-        no, un jugador tendría dos `translations 1.0` distintas."""
+        no, un jugador tendría dos `translations 1.0` distintas. `coming`: lo que se publica antes en esta tanda."""
         out = []
-        for bb in [] if self.offline else b.bundled:
+        for bb in [] if self.offline else [x for x in b.bundled if x.label not in coming]:
             st = self.state(bb)
             if st.kind != PUBLISHED:
                 rel = self.cmd(f'release {bb.info["package"]} {bb.info["version"]} --no-index')
@@ -604,9 +636,7 @@ class Publisher:
     def index_add(self, specs):
         builts, seen = [], set()
         for s in specs:
-            if s.count('@') != 1 or not all(s.split('@')):
-                raise SystemExit(f'{s!r}: tiene que ser <paquete>@<versión> (por ejemplo translation-ru@1.0).')
-            p, v = s.split('@')
+            p, v = parse_spec(s)
             if p in seen:
                 raise SystemExit(f'{p} aparece dos veces: un paquete va una sola vez por índice.')
             seen.add(p)
@@ -642,6 +672,105 @@ class Publisher:
         n = len(plan.builts)
         self.write(plan, plan.builts[0].info['name'] + ' ' + plan.builts[0].info['version'] if n == 1
                    else f'{n} paquetes')
+
+    def publish(self, items, build):
+        """`pes6pkg publish`: arma lo que falta (`build(item, {paquete: carpeta de la tanda})`), comprueba todo antes de
+        tocar GitHub, deja cada release como borrador comparado con lo armado, pregunta UNA vez con la lista entera,
+        firma un índice con todos, publica en orden y abre un PR. El mismo comando retoma donde quedó."""
+        seen = set()
+        for it in items:
+            if it.package in seen:
+                raise SystemExit(f'{it.package} aparece dos veces: un paquete va una sola vez por tanda.')
+            seen.add(it.package)
+        items = batch_order(items)
+        say(f'Tanda, en este orden: {", ".join(it.spec for it in items)}.')
+        batch = {it.package: self.out / it.package / it.version for it in items}
+        unbuilt = []
+        for it in items:
+            folder = batch[it.package]
+            if (folder / 'build.json').exists():
+                say(f'  {it.spec}: ya armado ({folder}).')
+                continue
+            if it.from_dir is None:
+                raise SystemExit(f'{it.spec} no está armado y no sé de qué carpeta: ponelo en el --lote con su "from", '
+                                 f'o armalo con `{self.cmd(f"build {it.package} {it.version} --from <carpeta>")}`.')
+            if self.unsigned:
+                say(f'  (simulado) armaría {it.spec} desde {it.from_dir}.')
+                unbuilt.append(it)
+                continue
+            say(f'  Armo {it.spec} desde {it.from_dir}.')
+            build(it, batch)
+        if unbuilt:
+            say(f'(simulado) sin armarlos no puedo comprobar {", ".join(it.spec for it in unbuilt)}; sigo con el resto.')
+        builts = [self.load(it.package, it.version) for it in items if it not in unbuilt]
+        if not builts:
+            return
+        notes = {it.package: it.notes for it in items}
+        plan = self.plan(builts)
+        if plan is None:
+            say('Nada que hacer: todos ya están publicados y en el índice de main.')
+            return
+        todo = plan.builts
+        coming = {b.label for b in todo}
+        states, problems = {}, []
+        for b in todo:
+            problems += self.bundle_problems(b, coming)
+            st = states[b.label] = self.state(b)
+            if st.kind == PUBLISHED:
+                why = self.public_mismatch(b)
+                if why:
+                    problems.append(f'{b.label} ya está publicado y no coincide con lo armado ({why}): armá una versión '
+                                    'nueva.')
+        if problems:
+            for x in problems:
+                say(f'NO ESTÁ LISTO: {x}')
+            raise SystemExit(f'{len(problems)} problemas: no se tocó nada en GitHub.')
+        with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
+            for b in todo:
+                st = states[b.label]
+                say(f'{b.label}: release {b.info["tag"]} en {b.info["repo"]}. En GitHub: {st.describe()}.')
+                if st.kind == PUBLISHED:
+                    continue
+                nf = notes.get(b.info['package'])
+                if nf is None:
+                    nf = Path(tmp) / f'notas-{b.info["package"]}.md'
+                    nf.write_text('', encoding='utf-8')
+                resumed = self._ensure_draft(b, st, nf)
+                if not self.run.dry_run and not resumed:
+                    why = draft_mismatch(self.gh, b.info, b.files, self.state(b))
+                    if why:
+                        raise SystemExit(f'{b.label}: lo subido no coincide con lo armado ({why}). No se publicó nada; '
+                                         'el mismo `pes6pkg publish` rehace ese borrador.')
+                    say('  Borrador: lo subido coincide con lo armado.')
+        say(f'\nSe van a publicar (quedan inmutables) y a sumar al índice {plan.serial}:')
+        for b in todo:
+            inside = ''.join(f', trae {bb.label} adentro' for bb in b.bundled)
+            state = 'ya publicado' if states[b.label].kind == PUBLISHED else 'borrador listo'
+            say(f'  {b.label:<24} {b.info["repo"]} {b.info["tag"]}  {size_label(b.info["archive"]["size"])}  '
+                f'({state}{inside})')
+        if not self.run.dry_run and not self.ask(f'¿Publicar los {len(todo)}? Escribí "sí": '):
+            say('No se publicó nada. Los borradores quedan (no son públicos): el mismo `pes6pkg publish` los retoma, y '
+                f'`{self.cmd("release <paquete> <versión> --discard")}` borra uno.')
+            return
+        self.sign(plan, on_fail='No se publicó nada: los borradores siguen. Volvé a correr el mismo `pes6pkg publish`.')
+        done = []
+        for b in todo:
+            if states[b.label].kind != PUBLISHED:
+                self.gh.release_publish(b.info['repo'], b.info['tag'])
+                if not self.run.dry_run:
+                    say(f'  Publicado {b.info["repo"]} {b.info["tag"]}.')
+            if not self.run.dry_run:
+                why = self.check_published(b, after_publish=False)
+                if why:
+                    rest = [x.label for x in todo if x.label not in done]
+                    raise SystemExit(f'{b.label} quedó publicado, pero las direcciones públicas no bajan lo armado '
+                                     f'({why}).\nPublicados y comprobados: {", ".join(done) or "ninguno"}. Sin '
+                                     f'terminar: {", ".join(rest)}. Ninguno entró al índice (los jugadores no ven '
+                                     'nada todavía). Volvé a correr el mismo `pes6pkg publish` en unos minutos: retoma '
+                                     'donde quedó. Si sigue igual, ese paquete necesita una versión nueva.')
+            done.append(b.label)
+        n = len(todo)
+        self.write(plan, todo[0].info['name'] + ' ' + todo[0].info['version'] if n == 1 else f'{n} paquetes')
 
     def renew(self, first=False):
         plan = self.plan([], renew=True, first=first)
