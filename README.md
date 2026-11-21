@@ -36,7 +36,7 @@ archivo, el que dice el manifiesto.
 | `packages/` | recetas de los paquetes (`packages/README.md`) |
 | `tool/` | `pes6pkg`, la herramienta (Python 3.11+, solo biblioteca estándar) |
 | `client/` | el verificador C++ común que usan los mods (`client/README.md`) |
-| `docs/` | [receta para publicar](docs/RECETA.md) |
+| `docs/` | [receta para publicar](docs/RECETA.md) y [cómo ensayarla](docs/ENSAYO.md) |
 
 ## Pruebas
 
