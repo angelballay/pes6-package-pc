@@ -20,6 +20,9 @@ inmutables y lo que baja un jugador. Cubren:
   índice, la rama de un PR sin mergear, y otro PR que cambia `main` mientras se firma;
 - el idioma con `translations` adentro (no se sube si la DLL no está publicada, o si es distinta de la publicada) y
   `verify-live --archives` de ese zip;
+- `publish`: una pregunta, una firma y un PR para la tanda entera; en cualquier orden (translations primero, HD Text
+  al final); arma lo que falta con la `translations` de la tanda adentro; firma antes de publicar; contestar "no", un
+  corte a mitad de la tanda y los dos tiempos del día, retomando con el mismo comando;
 - `--dry-run` con un llavero real, que no firma ni escribe; y el simulacro local, que no corre ningún comando.
 
 ## 2. El simulacro local (claves de prueba, sin red)
@@ -58,6 +61,9 @@ Con `--test-keys`, `release`, `index add` y `renew` no corren git, gh ni nada po
 
    Cada `index add` del simulacro parte de un índice vacío: no es la cuenta de seriales del día real (eso lo ensaya el
    paso 3).
+   O todo junto, con el mismo lote del día: `pes6pkg --test-keys publish --lote dia.json`. Arma con las claves de
+   prueba lo que falta en `out\prueba\`, muestra cada `(simulado) gh …`, la lista `Se van a publicar …` (sin
+   preguntar) y deja el índice en `out\prueba\simulado\`.
 3. **Mirar lo firmado:** `out\prueba\simulado\index\index.json` (los paquetes, sus tamaños y SHA-256) y
    `out\prueba\simulado\manifests\`.
 
@@ -71,10 +77,13 @@ estado de cada release en GitHub, `git fetch` y el índice de `main`, y lo que y
 firma y **no pide la contraseña**.
 
 ```
+pes6pkg publish --lote dia.json --dry-run
 pes6pkg release translations 1.0 --no-index --dry-run
 pes6pkg index add translations@1.0 --dry-run
 pes6pkg renew --dry-run
 ```
+
+`publish --dry-run` no arma lo que falta (armar es firmar): dice `(simulado) armaría …` y comprueba el resto.
 
 Qué mirar:
 - `main de angelballay/pes6-package-pc (<commit>): índice <N>, vence <fecha>.` (el índice que hay hoy en GitHub);

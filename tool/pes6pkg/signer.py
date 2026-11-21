@@ -49,16 +49,34 @@ def inside_git_repo(path: Path):
     return None
 
 
+_warned_plain = set()
+
+
+def warn_plain_key(key_path: Path):
+    """Una clave de uso sin contraseña se acepta, pero se avisa (una vez por comando)."""
+    if str(key_path) in _warned_plain:
+        return
+    _warned_plain.add(str(key_path))
+    print(f'AVISO: la clave {key_path} no tiene contraseña. minisign firma con ella sin pedir nada, y también podría '
+          'hacerlo cualquiera que use esta PC o un programa que corra en ella.', flush=True)
+
+
 class MinisignSigner:
-    def __init__(self, key_path: Path, public: minisig.PublicKey, minisign_exe=None):
+    """`allow_plain`: aceptar una clave sin contraseña (solo la de uso; la de reserva tiene que estar cifrada)."""
+
+    def __init__(self, key_path: Path, public: minisig.PublicKey, minisign_exe=None, allow_plain=False):
         key_path = Path(key_path)
         if not key_path.exists():
             raise SystemExit(f'No está la clave {key_path}.')
         repo = inside_git_repo(key_path)
         if repo:
             raise SystemExit(f'La clave {key_path} está dentro del repo {repo}: movela fuera (KEY-2).')
-        if not minisig.secret_key_is_encrypted(key_path.read_text(encoding='utf-8')):
-            raise SystemExit(f'La clave {key_path} no está cifrada con contraseña: no se usa para publicar (KEY-1).')
+        self.encrypted = minisig.secret_key_is_encrypted(key_path.read_text(encoding='utf-8'))
+        if not self.encrypted:
+            if not allow_plain:
+                raise SystemExit(f'La clave {key_path} no está cifrada con contraseña, y para esta clave no se acepta '
+                                 f'(KEY-1). Ciframela con `minisign -C -s {key_path}`.')
+            warn_plain_key(key_path)
         self.key_path = key_path
         self.public = public
         self.exe = minisign_exe or find_minisign()
@@ -68,10 +86,16 @@ class MinisignSigner:
         with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
             f = Path(tmp) / 'a-firmar'
             f.write_bytes(data)
-            print(f'minisign firma con la clave {self.public.id_hex}: te va a pedir la contraseña.')
-            # stdin y stdout heredados: minisign pide la contraseña en esta consola (PUB-8).
-            r = subprocess.run([self.exe, '-S', '-s', str(self.key_path), '-m', str(f), '-t', trusted_comment,
-                                '-x', str(f) + '.minisig'])
+            argv = [self.exe, '-S', '-s', str(self.key_path), '-m', str(f), '-t', trusted_comment,
+                    '-x', str(f) + '.minisig']
+            if self.encrypted:
+                print(f'minisign firma con la clave {self.public.id_hex}: te va a pedir la contraseña.', flush=True)
+                # stdin y stdout heredados: minisign pide la contraseña en esta consola (PUB-8).
+                r = subprocess.run(argv)
+            else:
+                print(f'minisign firma con la clave {self.public.id_hex} (sin contraseña).', flush=True)
+                # sin nada que preguntar: si minisign pidiera algo, recibe un stdin vacío y falla en vez de esperar
+                r = subprocess.run(argv, stdin=subprocess.DEVNULL)
             if r.returncode != 0:
                 raise SystemExit('minisign no pudo firmar (¿contraseña equivocada?). No se cambió nada.')
             text = (Path(str(f) + '.minisig')).read_text(encoding='utf-8')

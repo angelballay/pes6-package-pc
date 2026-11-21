@@ -41,7 +41,32 @@ def signer_for(args, ring, role='uso'):
         return signer.TestSigner(ring.signing[k.key_id])
     pub = ring.active() if role == 'uso' else next(k for k, r in zip(ring.keys, ring.roles) if r == role)
     path = Path(args.key) if getattr(args, 'key', None) else signer.default_key_path(ring.secret_name(role))
-    return signer.MinisignSigner(path, pub)
+    return signer.MinisignSigner(path, pub, allow_plain=(role == 'uso'))
+
+
+def check_key(exe, key: Path, ring):
+    """`keys check`: firma un archivo de prueba con `key` y lo comprueba con el llavero, con contraseña o sin. La de
+    reserva tiene que estar cifrada; la de uso puede no estarlo (con un aviso). Devuelve (índice, rol, cifrada)."""
+    if not key.exists():
+        raise SystemExit(f'No está la clave {key}.')
+    encrypted = minisig.secret_key_is_encrypted(key.read_text(encoding='utf-8'))
+    with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
+        f = Path(tmp) / 'prueba.txt'
+        f.write_text('simulacro de pes6pkg keys check\n', encoding='utf-8')
+        if encrypted:
+            say(f'minisign va a pedir la contraseña de {key}.')
+        argv = [exe, '-S', '-s', str(key), '-m', str(f), '-t', 'pes6pkg keys check']
+        if subprocess.run(argv, stdin=None if encrypted else subprocess.DEVNULL).returncode:
+            raise SystemExit('La clave no abrió con esa contraseña.' if encrypted else 'minisign no pudo firmar con la clave.')
+        sig = (Path(str(f) + '.minisig')).read_text(encoding='utf-8')
+        i, _ = minisig.verify(f.read_bytes(), sig, ring.keys)
+    role = ring.roles[i]
+    if not encrypted:
+        if role == 'reserva':
+            raise SystemExit(f'{key} es la clave de reserva ({ring.keys[i].id_hex}) y NO tiene contraseña: tiene que estar '
+                             f'cifrada. Ciframela con `minisign -C -s {key}` y rehacé sus copias fuera de línea.')
+        signer.warn_plain_key(key)
+    return i, role, encrypted
 
 
 def banner(args, end=False):
@@ -74,15 +99,9 @@ def cmd_keys(args):
     if args.what == 'check':
         key = Path(args.key)
         ring = keys.load_production(REPO)
-        with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
-            f = Path(tmp) / 'prueba.txt'
-            f.write_text('simulacro de pes6pkg keys check\n', encoding='utf-8')
-            say(f'minisign va a pedir la contraseña de {key}.')
-            if subprocess.run([exe, '-S', '-s', str(key), '-m', str(f), '-t', 'pes6pkg keys check']).returncode:
-                raise SystemExit('La clave no abrió con esa contraseña.')
-            sig = (Path(str(f) + '.minisig')).read_text(encoding='utf-8')
-            i, _ = minisig.verify(f.read_bytes(), sig, ring.keys)
-        say(f'Bien: {key} abre y firma, y es la clave {ring.keys[i].id_hex} ({ring.roles[i]}). El índice no cambió.')
+        i, role, encrypted = check_key(exe, key, ring)
+        say(f'Bien: {key} abre y firma, y es la clave {ring.keys[i].id_hex} ({role}'
+            f'{", sin contraseña" if not encrypted else ""}). El índice no cambió.')
         return
     if args.what == 'new':
         meta = REPO / 'keys' / 'keys.json'
@@ -236,6 +255,48 @@ def cmd_release(args):
 
 def cmd_index(args):
     publisher(args).index_add(args.packages)
+
+
+def read_lote(path):
+    """El archivo de una tanda de `publish` (JSON): {"recipes": carpeta, "packages": [{"package", "version", "from",
+    "notes"}, …]}. "from" y "notes" son opcionales; las rutas relativas son relativas al archivo."""
+    p = Path(path)
+    try:
+        data = json.loads(p.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        raise SystemExit(f'No pude leer el lote {p}: {e}')
+
+    def rel(x):
+        return None if x is None else (Path(x) if Path(x).is_absolute() else p.parent / x)
+    items = []
+    for e in data.get('packages') or []:
+        if not isinstance(e, dict) or not e.get('package') or not e.get('version'):
+            raise SystemExit(f'{p}: cada paquete lleva "package" y "version" (y, si falta armarlo, "from").')
+        items.append(publish.Item(e['package'], e['version'], rel(e.get('from')), rel(e.get('notes'))))
+    if not items:
+        raise SystemExit(f'{p}: no hay paquetes.')
+    return items, rel(data.get('recipes'))
+
+
+def cmd_publish(args):
+    if args.lote and args.packages:
+        raise SystemExit('Pasá los paquetes o un --lote, no los dos.')
+    if args.lote:
+        items, recipes = read_lote(args.lote)
+    elif args.packages:
+        items, recipes = [publish.Item(*publish.parse_spec(s)) for s in args.packages], None
+    else:
+        raise SystemExit('¿Qué publico? Pasá <paquete>@<versión> … o --lote <archivo.json>.')
+    recipes = Path(args.recipes) if args.recipes else recipes
+    pub = publisher(args)
+
+    def build(it, batch):
+        recipe = package.load_recipe(package.recipe_path(it.package, recipes, REPO), it.package)
+        bundles = [batch[b] for b in recipe.get('bundles', []) if b in batch]
+        out, info = package.build(REPO, it.package, it.version, it.from_dir, out_dir(args), signer_for(args, pub.ring),
+                                  pub.ring, None, recipes, None, bundles)
+        say(f'  Armado {out} ({info["archive"]["size"]} bytes).')
+    pub.publish(items, build)
 
 
 def cmd_renew(args):
@@ -399,7 +460,7 @@ def main(argv=None):
         except (AttributeError, ValueError):
             pass
     p = argparse.ArgumentParser(prog='pes6pkg', description=__doc__)
-    test_help = 'usar las claves de PRUEBA: release, index add y renew son un simulacro local, sin red'
+    test_help = 'usar las claves de PRUEBA: release, index add, renew y publish son un simulacro local, sin red'
     p.add_argument('--test-keys', action='store_true', help=test_help)
     # también después del subcomando (`pes6pkg release … --test-keys`)
     common = argparse.ArgumentParser(add_help=False)
@@ -460,6 +521,15 @@ def main(argv=None):
     ia.add_argument('packages', nargs='+', metavar='paquete@versión')
     index_args(ia)
     ix.set_defaults(fn=cmd_index)
+
+    pp = sub.add_parser('publish', help='una tanda de punta a punta: armar lo que falta, publicar todo y UN PR '
+                                        'del índice, con una sola pregunta')
+    pp.add_argument('packages', nargs='*', metavar='paquete@versión', help='paquetes ya armados en out/')
+    pp.add_argument('--lote', help='archivo JSON de la tanda: "recipes" y, por paquete, "package", "version" y, si '
+                                   'hay que armarlo, "from" (y "notes", opcional)')
+    pp.add_argument('--recipes', help='carpeta de recetas para armar (reemplaza la del lote)')
+    index_args(pp)
+    pp.set_defaults(fn=cmd_publish)
 
     n = sub.add_parser('renew', help='índice nuevo con los mismos paquetes y vencimiento nuevo')
     n.add_argument('--first', action='store_true', help='el primer índice (serial 1, sin paquetes)')

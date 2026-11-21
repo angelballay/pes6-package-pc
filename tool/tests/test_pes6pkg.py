@@ -380,13 +380,53 @@ class Cli(unittest.TestCase):
                 signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign')
             self.assertIn('dentro del repo', str(e.exception))
 
-    def test_signer_refuses_plain_key(self):
+    def test_signer_plain_key_only_for_use(self):
+        """Sin contraseña: la clave de uso se acepta con un aviso; la de reserva (allow_plain=False), no."""
         with tempfile.TemporaryDirectory() as tmp:
-            k = Path(tmp) / 'k1.key'
+            k = Path(tmp) / 'k2.key'
             k.write_text('untrusted comment: x\n' + base64.b64encode(b'Ed\0\0B2' + b'\0' * 152).decode() + '\n')
             with self.assertRaises(SystemExit) as e:
                 signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign')
             self.assertIn('no está cifrada', str(e.exception))
+            self.assertIn('minisign -C -s', str(e.exception))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                s = signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign', allow_plain=True)
+                signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign', allow_plain=True)
+            self.assertFalse(s.encrypted)
+            self.assertEqual(out.getvalue().count('no tiene contraseña'), 1)  # avisa una vez por comando
+
+
+@unittest.skipUnless(shutil.which('minisign'), 'hace falta minisign')
+class MinisignPlain(unittest.TestCase):
+    """Con el minisign de verdad y una clave sin contraseña recién creada (-G -W): firma sin preguntar nada, y
+    `keys check` sirve con ella (avisa si es la de uso, falla si es la de reserva)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='pes6pkg-minisign-'))
+        self.addCleanup(rm_tree, self.tmp)
+        self.exe = shutil.which('minisign')
+        self.key, pub = self.tmp / 'k.key', self.tmp / 'k.pub'
+        r = subprocess.run([self.exe, '-G', '-W', '-p', str(pub), '-s', str(self.key)], capture_output=True,
+                           stdin=subprocess.DEVNULL)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.pub = minisig.parse_public_key(pub.read_text(encoding='utf-8'))
+
+    def test_signs_without_asking(self):
+        with redirect_stdout(io.StringIO()) as out:
+            s = signer.MinisignSigner(self.key, self.pub, minisign_exe=self.exe, allow_plain=True)
+            sig = s.sign(b'indice', 'pes6pkg index 2')
+        self.assertEqual(minisig.verify(b'indice', sig, [self.pub]), (0, 'pes6pkg index 2'))
+        self.assertIn('(sin contraseña)', out.getvalue())
+
+    def test_keys_check(self):
+        ring = keys.Keyring([self.pub], ['uso'], False, {}, ['k.pub'])
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.check_key(self.exe, self.key, ring), (0, 'uso', False))
+        ring = keys.Keyring([self.pub], ['reserva'], False, {}, ['k.pub'])
+        with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):
+            cli.check_key(self.exe, self.key, ring)
+        self.assertIn('NO tiene contraseña', str(e.exception))
 
 
 class Rotate(unittest.TestCase):
@@ -609,7 +649,11 @@ class FakeReleases:
         return f'https://github.com/{repo}/pull/{len(self.prs)}\n'
 
     def public(self, url, limit):
-        """Lo que baja un jugador, sin sesión: solo lo publicado."""
+        """Lo que baja un jugador, sin sesión: solo lo publicado. `fail_public`: partes de URL que fallan una vez."""
+        for frag in list(getattr(self, 'fail_public', ())):
+            if frag in url:
+                self.fail_public.discard(frag)
+                raise OSError(f'HTTP 503 {url}')
         m = re.match(r'^https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)$', url)
         r = self.found(m.group(1), m.group(2)) if m else None
         if r is None or r['draft'] or m.group(3) not in r['assets']:
@@ -1124,6 +1168,122 @@ class Publicar(unittest.TestCase):
         self.assertIn('no están listos', msg)  # en simulado no se publicó nada: index add lo dice
         self.assertEqual((self.gh.release_list(REPO_T), self.gh.prs, self.branches()), ([], [], ['main']))
         self.assertTrue(self.gh.count('create'))  # mostró qué haría
+
+    # -- pes6pkg publish: una tanda de punta a punta
+    def items(self, *specs, **froms):
+        return [publish.Item(*publish.parse_spec(s), from_dir=froms.get(s.split('@')[0].replace('-', '_')))
+                for s in specs]
+
+    def builder(self):
+        self.built = []
+
+        def build(it, batch):
+            recipe = package.load_recipe(package.recipe_path(it.package, self.tmp / 'recetas', cli.REPO), it.package)
+            with redirect_stdout(io.StringIO()):
+                package.build(cli.REPO, it.package, it.version, it.from_dir, self.out, self.sg, self.ring, '2026-12-05',
+                              self.tmp / 'recetas', None, [batch[b] for b in recipe.get('bundles', []) if b in batch])
+            self.built.append(it.spec)
+        return build
+
+    def test_publish_una_pregunta_una_firma_un_pr(self):
+        asks = []
+        pub = self.pub()
+        pub.ask = lambda prompt: asks.append(prompt) or True
+        # en cualquier orden: publish pone translations primero y HD Text al final
+        out = self.say(pub.publish, self.items('hdtext@1.0.2', 'translation-el@1.0', 'translations@1.0',
+                                               'translation-ru@1.0'), self.builder())
+        self.assertEqual(len(asks), 1)
+        self.assertIn('¿Publicar los 4?', asks[0])
+        for line in ('translations 1.0', 'translation-el 1.0', 'hdtext 1.0.2', 'trae translations 1.0 adentro'):
+            self.assertIn(line, out)
+        self.assertEqual([c[2] for c in self.gh.calls if c[0] == 'publish'], ['dll-v1.0', 'el-v1.0', 'ru-v1.0', 'v1.0.2'])
+        self.assertEqual((self.sg.n, len(self.gh.prs), self.built), (1, 1, []))  # todo ya armado: una sola firma
+        self.assertEqual(len(self.remote_index('publicar/indice-2')['packages']), 4)
+
+    def test_publish_arma_lo_que_falta(self):
+        rm_tree(self.out / 'translation-el')
+        msg, _ = self.fails(self.pub().publish, self.items('translations@1.0', 'translation-el@1.0'), self.builder())
+        self.assertIn('translation-el@1.0 no está armado y no sé de qué carpeta', msg)
+        srcs = day_sources(self.tmp / 'otra')
+        out = self.say(self.pub().publish, self.items('translations@1.0', 'translation-el@1.0',
+                                                      translation_el=srcs['translation-el']), self.builder())
+        self.assertEqual(self.built, ['translation-el@1.0'])
+        self.assertIn('Armo translation-el@1.0', out)
+        self.assertEqual(self.sg.n, 2)  # el manifiesto del idioma y el índice
+        info = json.loads((self.out / 'translation-el' / '1.0' / 'build.json').read_text(encoding='utf-8'))
+        self.assertEqual(info['bundles'][0]['package'], 'translations')  # con la translations de la tanda
+        self.assertEqual(len(self.gh.prs), 1)
+
+    def test_publish_no_deja_borradores_y_retoma(self):
+        out = self.say(self.pub(ask='no').publish, self.items(*self.DAY), self.builder())
+        self.assertIn('No se publicó nada', out)
+        self.assertEqual((self.gh.count('create'), self.gh.count('publish'), self.sg.n), (4, 0, 0))
+        out = self.say(self.pub().publish, self.items(*self.DAY), self.builder())
+        self.assertEqual(out.count('Retomo el borrador'), 4)
+        self.assertEqual((self.gh.count('create'), self.gh.count('publish'), len(self.gh.prs)), (4, 4, 1))
+
+    def test_publish_se_corta_y_retoma(self):
+        self.gh.fail_public = {'ru-v1.0/PES6_Translation_ru_v1.0.zip'}
+        msg, _ = self.fails(self.pub().publish, self.items(*self.DAY), self.builder())
+        self.assertIn('Publicados y comprobados: translations 1.0. Sin terminar: translation-ru 1.0, '
+                      'translation-el 1.0, hdtext 1.0.2', msg)
+        self.assertIn('Ninguno entró al índice', msg)
+        self.assertNotIn('index add', msg)
+        self.assertEqual((self.gh.prs, self.branches()), ([], ['main']))
+        self.assertTrue(self.published('ru-v1.0'))  # quedó publicado; el resto, en borrador
+        self.assertFalse(self.published('el-v1.0'))
+        self.assertFalse(self.published('v1.0.2', 'angelballay/pes6-hd-text'))
+        out = self.say(self.pub().publish, self.items(*self.DAY), self.builder())
+        self.assertIn('ya publicado', out)
+        self.assertEqual((self.gh.count('publish'), len(self.gh.prs)), (4, 1))
+        self.assertEqual(len(self.remote_index('publicar/indice-2')['packages']), 4)
+
+    def test_publish_firma_antes_de_publicar(self):
+        bad = CountingSigner(self.ring, fail=1)
+        msg, _ = self.fails(self.pub(signer_=bad).publish, self.items(*self.DAY), self.builder())
+        self.assertIn('No se publicó nada: los borradores siguen', msg)
+        self.assertEqual((self.gh.count('create'), self.gh.count('publish')), (4, 0))
+        self.say(self.pub(signer_=bad).publish, self.items(*self.DAY), self.builder())
+        self.assertEqual((self.gh.count('create'), self.gh.count('publish'), len(self.gh.prs)), (4, 4, 1))
+
+    def test_publish_en_dos_tiempos(self):
+        self.say(self.pub().publish, self.items('translations@1.0'), self.builder())
+        self.merge('publicar/indice-2')
+        self.say(self.pub().publish, self.items(*self.DAY), self.builder())  # translations ya está: se saltea
+        doc = self.remote_index('publicar/indice-3')
+        self.assertEqual((doc['serial'], len(doc['packages'])), (3, 4))
+        self.assertEqual(self.gh.count('create'), 4)
+
+    def test_publish_dry_run_con_claves_reales(self):
+        ring = keys.Keyring(self.ring.keys, ['uso', 'reserva'], False, {}, ['k1.pub', 'k2.pub'])
+        out_dir = self.tmp / 'out-real'
+        (self.tmp / 'real').mkdir()
+        build_day(self.tmp / 'real', ring, out_dir)
+        rm_tree(out_dir / 'translation-el')
+        pub = self.pub(run=Runner(DRY), ring=ring, out=out_dir, make_signer=lambda: 1 / 0)
+        pub.ask = lambda prompt: 1 / 0
+        with mock.patch.object(signer, 'find_minisign', return_value=None):
+            out = self.say(pub.publish, self.items('translations@1.0', 'translation-ru@1.0', 'translation-el@1.0',
+                                                   translation_el=self.tmp / 'x'), lambda it, b: 1 / 0)
+        self.assertIn('(simulado) armaría translation-el@1.0', out)
+        self.assertIn('acá minisign pediría la contraseña', out)
+        self.assertEqual((self.gh.release_list(REPO_T), self.gh.prs, self.branches()), ([], [], ['main']))
+
+    def test_publish_cli_lote(self):
+        """--lote por la CLI, en simulacro local (claves de prueba): arma, publica en simulado y firma un índice."""
+        srcs = day_sources(self.tmp / 'lote')
+        lote = self.tmp / 'lote' / 'dia.json'
+        lote.write_text(json.dumps({'recipes': '../recetas', 'packages': [
+            {'package': 'translation-ru', 'version': '1.0', 'from': str(srcs['translation-ru'])},
+            {'package': 'translations', 'version': '1.0', 'from': 'src-translations-1.0'}]}), encoding='utf-8')
+        out_dir = self.tmp / 'out-lote'
+        out = io.StringIO()
+        with mock.patch.object(subprocess, 'run', side_effect=AssertionError('corrió un comando')), \
+                redirect_stdout(out), redirect_stderr(io.StringIO()):
+            cli.main(['--test-keys', 'publish', '--lote', str(lote), '--out', str(out_dir)])
+        self.assertIn('Tanda, en este orden: translations@1.0, translation-ru@1.0.', out.getvalue())
+        idx = out_dir / 'simulado' / 'index' / 'index.json'
+        self.assertEqual(len(jsonr.loads(idx.read_bytes())['packages']), 2)
 
     def test_salida_a_un_pipe_con_nombres_no_ascii(self):
         """Con la salida a otro programa (cp1252 en Windows), «Русский» no corta el comando."""
