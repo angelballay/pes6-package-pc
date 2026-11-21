@@ -304,7 +304,8 @@ def cmd_release(args):
 
 def cmd_renew(args):
     ring = ring_for(args)
-    prev = index_mod.load(REPO, ring)
+    # Con claves de prueba es un simulacro: no lee el índice real del repo (lo firma otra clave).
+    prev = None if ring.test else index_mod.load(REPO, ring)
     if prev is None and not args.first:
         raise SystemExit('No hay índice todavía. Para el primero: `pes6pkg renew --first`.')
     run = Runner(args.dry_run or ring.test)
