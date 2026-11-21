@@ -781,6 +781,33 @@ class Bundle(unittest.TestCase):
         self.assertEqual(verify.read_entry(zb, e, e.usize), (dll / 'translations-1.0.manifest.json.minisig').read_bytes())
         package.check_folder(self.out / 'translation-ru' / '1.0', self.ring, use_minisign=False)
 
+    def test_web_sin_la_fila_de_translations_si_va_adentro(self):
+        """`pes6pkg web` de un idioma con translations adentro: no agrega la fila de requisito de PES6 Translations y
+        saca la que haya; las demás filas quedan. Sin translations adentro, la agrega."""
+        self.build('translations')
+        dll = self.out / 'translations' / '1.0'
+        self.build('translation-ru', bundles=[dll])
+        self.build('translation-el')  # sin translations adentro
+        web = self.tmp / 'traducciones' / 'web' / 'translations'
+        other = {'label': {'es': 'Otra', 'en': 'Other'}, 'value': {'es': 'x', 'en': 'x'}}
+        old = {'label': {'es': 'PES6 Translations', 'en': 'PES6 Translations'},
+               'value': {'es': '1.0 o más nueva', 'en': '1.0 or later'}, 'mod': 'pes6-translations'}
+        for code in ('ru', 'el'):
+            (web / code).mkdir(parents=True)
+            (web / code / 'translation.json').write_text(json.dumps({'code': code, 'requirements': [other, old]}),
+                                                         encoding='utf-8')
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            for pkg in ('translation-ru', 'translation-el'):
+                cli.main(['--test-keys', 'web', pkg, '1.0', '--translations-repo', str(self.tmp / 'traducciones'),
+                          '--out', str(self.out)])
+        ru = json.loads((web / 'ru' / 'translation.json').read_text(encoding='utf-8'))
+        self.assertEqual(ru['requirements'], [other])
+        self.assertEqual(ru['release']['file'], 'PES6_Translation_ru_v1.0.zip')
+        self.assertIn('translations va adentro del zip', out.getvalue())
+        el = json.loads((web / 'el' / 'translation.json').read_text(encoding='utf-8'))
+        self.assertEqual([r.get('mod') for r in el['requirements']], [None, 'pes6-translations'])
+
     def test_bundle_desde_la_receta(self):
         rec = write_recipes(self.tmp / 'recetas-b', bundles=True)
         with self.assertRaises(SystemExit) as e:
