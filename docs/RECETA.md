@@ -20,7 +20,40 @@ menos, arriba de todo aparece un cartel con la fecha. Para ensayar sin tocar nad
 
 ## Cómo publica `pes6pkg`
 
-Dos comandos, que se pueden correr de nuevo sin riesgo:
+**De punta a punta, `pes6pkg publish`**, para una tanda (uno o varios paquetes):
+
+```
+pes6pkg publish --lote dia.json --dry-run     (qué haría: no arma, no sube, no firma)
+pes6pkg publish --lote dia.json
+```
+
+`dia.json` dice qué paquetes van y de qué carpeta se arma cada uno (las rutas relativas, relativas al archivo):
+
+```json
+{
+  "recipes": "<pes6xlife-translations>/packages",
+  "packages": [
+    { "package": "translations", "version": "1.0", "from": "<carpeta de la DLL>" },
+    { "package": "translation-ru", "version": "1.0", "from": "<carpeta de ru>" },
+    { "package": "hdtext", "version": "1.0.2", "from": "<carpeta de HD Text>", "notes": "notas-1.0.2.md" }
+  ]
+}
+```
+
+(Con paquetes ya armados alcanza con `pes6pkg publish translations@1.0 translation-ru@1.0 …`.) `publish`:
+
+1. ordena la tanda: `translations` primero (va adentro de cada idioma), los idiomas, y el resto (HD Text) al final;
+2. arma lo que falta en `out\` (lo ya armado lo usa tal cual), cada idioma con la `translations` de la tanda adentro;
+3. lee `main`, comprueba todo lo que se puede antes de tocar GitHub, y sube cada release como **borrador** comparado
+   con lo armado;
+4. muestra la lista entera y pregunta **una vez**: `¿Publicar los N? Escribí "sí"`;
+5. firma el índice (antes de publicar nada), publica en orden, comprueba cada uno por sus direcciones públicas y abre
+   **un** PR del índice.
+
+Si se corta, **el mismo `publish` retoma**: lo armado, lo publicado y los borradores que coinciden se usan tal cual, y
+lo que ya está en el índice de `main` se saltea.
+
+Lo mismo, de a un paso, con dos comandos que también se pueden correr de nuevo sin riesgo:
 
 - **`pes6pkg release <paquete> <versión> --no-index`** publica el release en el repo del mod y **no** toca el índice
   (no pide contraseña). Un release publicado que no está en el índice no lo ve ningún jugador.
@@ -68,52 +101,52 @@ escribe la descarga en los datos de la web.
 
 ## El día de la publicación: HD Text 1.0.2, `translations` 1.0 y siete idiomas
 
-**Antes de empezar:**
+Hoy el índice está vacío (`packages: []`): hasta que se mergea un PR del índice, ningún jugador ve nada nuevo. Los
+tags de los releases los crea GitHub **al publicar**, desde la rama principal de cada repo de releases. Por eso cada
+`release/…` va a `main` **antes**. La web, en cambio, se publica **después**: lee las versiones de GitHub cuando se
+arma.
 
-- HD Text 1.0.2 compilado con el `client/` actual de este repo, el que acepta los documentos en `Docs/<paquete>/`. Un
-  cliente compilado con el viejo rechaza los zips de idioma.
-- Las recetas de `pes6xlife-translations\packages\` con `Docs/<paquete>/` y `"bundles": ["translations"]` en cada
-  idioma, y las carpetas de `--from` con esa misma estructura.
-- Las ramas `release/…` de cada repo mergeadas a `main`: el tag se crea al publicar, desde la rama principal del repo
-  del mod.
-- `pes6pkg status`: el índice no está por vencer, y el workflow de avisos está prendido.
+### En orden
 
-Va en dos tiempos: **primero `translations` sola** (es chica, va primero de todos modos, y prueba el camino entero con
-las claves reales); si sale bien, **el resto en lote**. Los idiomas van antes que HD Text: la pestaña Languages de
-HD Text lista los idiomas del índice. Contraseñas: 2 en el primer tiempo y 9 en el segundo. PR: uno por tiempo.
+| # | Dónde | Qué | Por qué en este lugar |
+|---|---|---|---|
+| 1 | `pes6-package-pc` | `pes6pkg status`; HD Text 1.0.2 compilado con el `client/` actual (acepta `Docs/<paquete>/`) | un cliente viejo rechaza los zips de idioma |
+| 2 | `pes6xlife-translations` | mergear a `main` las recetas (`Docs/<paquete>/`, `"bundles": ["translations"]`) y los README/LEEME | los tags `dll-v1.0` y `<código>-v1.0` salen de ese `main` |
+| 3 | `pes6-hd-text` | mergear `release/1.0.2` → `main` (README y CHANGELOG del repo público) | el tag `v1.0.2` sale de ese `main` |
+| 4 | `pes6_hd_text_code` | **no** mergear todavía `release/1.0.2` → `main`: ese merge publica la web | la web se arma con la última versión publicada en GitHub |
+| 5 | `pes6-package-pc` | **primer tiempo**: `translations` sola (abajo) | prueba el camino entero con las claves reales, con el paquete más chico |
+| 6 | `pes6-package-pc` | **segundo tiempo**: los siete idiomas y HD Text (abajo) | los idiomas llevan adentro la `translations` ya publicada |
+| 7 | `pes6xlife-translations` | `pes6pkg web <paquete> <versión> --translations-repo <ruta>` de cada uno, y su PR | la descarga de cada página apunta al release publicado |
+| 8 | `pes6_hd_text_code` | mergear `release/1.0.2` → `main` (publica la web). Si la web ya se había publicado, Actions → Sitio → **Run workflow** | ya están los releases y el índice: la web muestra 1.0.2 y los idiomas |
 
 ### Primer tiempo: `translations` 1.0
 
 | Paso | Comando | Qué mirar |
 |---|---|---|
-| 1 | `pes6pkg build translations 1.0 --from <carpeta de la DLL> --recipes <pes6xlife-translations>\packages` | contraseña de K1; `Armado …\out\translations\1.0` |
-| 2 | `pes6pkg check out\translations\1.0` | `Bien: translations 1.0, N archivos comprobados como un cliente.` |
-| 3 | `pes6pkg release translations 1.0 --no-index --dry-run` | `En GitHub: no existe todavía.`, y las líneas `(simulado) gh release create …` y `… upload …` |
-| 4 | `pes6pkg release translations 1.0 --no-index` | `Borrador: lo subido coincide con lo armado.` → `sí` → `Publicado …`, `las direcciones públicas bajan lo mismo que se armó` y `gh release verify-asset: bien.` |
-| 5 | `pes6pkg index add translations@1.0 --dry-run` | `main de angelballay/pes6-package-pc (…): índice 1, …` y `(simulado) el índice 2 vencería el …` |
-| 6 | `pes6pkg index add translations@1.0` | contraseña de K1; `Índice 2 firmado, vence el …. PR: https://github.com/angelballay/pes6-package-pc/pull/…` |
-| 7 | (en GitHub) la CI del PR en verde → **Merge** | los dos trabajos de `check` en verde |
-| 8 | `pes6pkg verify-live --archives` | `Índice público 2 …` y `translations 1.0: manifiesto bien, zip bien` |
+| 1 | `pes6pkg publish --lote tiempo1.json --dry-run` (el lote con solo `translations`) | `(simulado) armaría translations@1.0 …`, o `ya armado` |
+| 2 | `pes6pkg publish --lote tiempo1.json` | `Tanda, en este orden: translations@1.0.`, `main de angelballay/pes6-package-pc (…): índice 1`, `En GitHub: no existe todavía.`, `Borrador: lo subido coincide con lo armado.`, la lista `Se van a publicar …` → `sí` → `Publicado …`, `las direcciones públicas bajan lo mismo que se armó`, `gh release verify-asset: bien.` y `Índice 2 firmado … PR: …` |
+| 3 | (en GitHub) la CI del PR en verde → **Merge** | los dos trabajos de `check` en verde |
+| 4 | `pes6pkg verify-live --archives` | `Índice público 2 …` y `translations 1.0: manifiesto bien, zip bien` |
 
-En los pasos 5 y 6 aparece `AVISO: translations 1.0 pide hdtext 1.0.2 o más nueva…`: es lo esperado, HD Text entra en
-el segundo tiempo. Si algo de esto falla, **pará acá**. El release publicado sin índice no lo ve nadie. Se corrige la
-herramienta y se sigue con el mismo comando. En el peor caso la DLL pasa a 1.0.1 (`build translations 1.0.1`, y los
-idiomas la llevan adentro).
+Aparece `AVISO: translations 1.0 pide hdtext 1.0.2 o más nueva…`: es lo esperado, HD Text entra en el segundo tiempo.
+Si algo falla, **pará acá**. Un release publicado sin índice no lo ve nadie. Se corrige la herramienta y se sigue con el
+mismo comando. En el peor caso la DLL pasa a 1.0.1, y los idiomas la llevan adentro.
 
 ### Segundo tiempo: los siete idiomas y HD Text
 
+El lote `dia.json` con `translations`, los siete idiomas (`el`, `hr`, `id`, `pt-br`, `ru`, `sr` y `tr`) y `hdtext`.
+`translations` ya está en el índice y se saltea; los idiomas la llevan adentro.
+
 | Paso | Comando | Qué mirar |
 |---|---|---|
-| 1 | `pes6pkg build translation-<c> 1.0 --from <carpeta del idioma> --recipes <pes6xlife-translations>\packages`, para `el`, `hr`, `id`, `pt-br`, `ru`, `sr` y `tr` | contraseña de K1 cada vez; `incluyo translations 1.0 (…)` y `adentro: translations 1.0, con su manifiesto y su firma de siempre` |
-| 2 | `pes6pkg build hdtext 1.0.2 --from <carpeta de HD Text>` | contraseña de K1 |
-| 3 | `pes6pkg check out\<paquete>\<versión>` de cada uno | `Bien: …` |
-| 4 | `pes6pkg release translation-<c> 1.0 --no-index`, los siete | `Trae adentro translations 1.0 (release dll-v1.0).` → `sí` → `Publicado …` |
-| 5 | `pes6pkg release hdtext 1.0.2 --no-index`, el último | `sí` → `Publicado angelballay/pes6-hd-text v1.0.2.` |
-| 6 | `pes6pkg index add translation-el@1.0 translation-hr@1.0 translation-id@1.0 translation-pt-br@1.0 translation-ru@1.0 translation-sr@1.0 translation-tr@1.0 hdtext@1.0.2 --dry-run` | `índice 2`, una línea `las direcciones públicas bajan…` por paquete, y `(simulado) el índice 3 vencería…` |
-| 7 | el mismo `index add`, sin `--dry-run` | contraseña de K1; `Índice 3 firmado … PR: …` |
-| 8 | (en GitHub) la CI en verde → **Merge**, enseguida | entre el paso 5 y este, HD Text 1.0.2 se ve en GitHub, pero el actualizador y la pestaña Languages todavía no |
-| 9 | `pes6pkg verify-live --archives` | `Índice público 3`, y los nueve paquetes con `manifiesto bien, zip bien` |
-| 10 | `pes6pkg web <paquete> <versión> --translations-repo <ruta>` de cada uno, e importar el `.ics` | |
+| 1 | `pes6pkg publish --lote dia.json --dry-run` | `índice 2`, `translations 1.0 ya está en el índice 2: lo salteo.`, un `(simulado) armaría …` por cada paquete que falta armar |
+| 2 | `pes6pkg publish --lote dia.json` | un `Armo …` por cada uno que faltaba, y la lista: cada idioma `(borrador listo, trae translations 1.0 adentro)` y `hdtext 1.0.2 … (borrador listo)` → `sí` → `Publicado …` uno por uno, HD Text último → `Índice 3 firmado … PR: …` |
+| 3 | (en GitHub) la CI en verde → **Merge**, enseguida | entre el paso 2 y este, HD Text 1.0.2 se ve en GitHub, pero el actualizador y la pestaña Languages todavía no |
+| 4 | `pes6pkg verify-live --archives` | `Índice público 3`, y los nueve paquetes con `manifiesto bien, zip bien`; cada idioma `(trae adentro translations 1.0)` |
+| 5 | importar el `.ics` del índice 3, y seguir con los pasos 7 y 8 de la tabla de arriba | |
+
+Con los comandos de a un paso es lo mismo: `pes6pkg build …` de cada paquete, `pes6pkg release <paquete> <versión>
+--no-index` de cada uno (con un "sí" cada uno), y un `pes6pkg index add <paquete>@<versión> …` con todos.
 
 ## Qué hace cada paso en GitHub
 
@@ -137,6 +170,8 @@ Comprobado contra `gh` 2.101:
 
 | Qué dice | Cómo quedó | Qué hacer |
 |---|---|---|
+| En `publish`: `No se publicó nada. Los borradores quedan` (contestaste que no) | borradores, privados | el mismo `publish` los retoma |
+| En `publish`: `Publicados y comprobados: … Sin terminar: … Ninguno entró al índice` | algunos publicados, el resto en borrador, sin índice: nadie ve nada | el mismo `publish` en unos minutos: retoma donde quedó |
 | `Quedó en borrador: no se publicó nada` (contestaste que no) | un borrador, privado | el mismo comando lo retoma; `--discard` lo borra |
 | `Falló: gh release upload …` (se cortó la red) | un borrador a medias | el mismo comando lo rehace |
 | `minisign no pudo firmar (¿contraseña equivocada?)` en `release` | nada publicado, el borrador sigue | el mismo comando |
