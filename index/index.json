@@ -1,8 +1,26 @@
 {
   "type": "pes6pkg-index",
   "schema": 1,
-  "serial": 1,
-  "issued": "2026-11-21T05:51:35Z",
-  "expires": "2027-02-19T05:51:35Z",
-  "packages": []
+  "serial": 2,
+  "issued": "2026-11-21T21:47:18Z",
+  "expires": "2027-02-19T21:47:18Z",
+  "packages": [
+    {
+      "package": "translations",
+      "name": "PES6 Translations",
+      "version": "1.0",
+      "released": "2026-11-21",
+      "notes": "https://github.com/angelballay/pes6xlife-translations/releases/tag/dll-v1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/dll-v1.0/translations-1.0.manifest.json",
+        "size": 810,
+        "sha256": "cfd0d8b12b77294512b7303e0911bc337a84975348e9c11dbf2660644f7c7413"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-translations/releases/download/dll-v1.0/PES6_Translations_DLL_v1.0.zip",
+        "size": 94200,
+        "sha256": "59afda3f099498150db352f636271d21a547e64a154528d7b83aabe9f0b7f2d6"
+      }
+    }
+  ]
 }
