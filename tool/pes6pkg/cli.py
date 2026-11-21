@@ -41,7 +41,32 @@ def signer_for(args, ring, role='uso'):
         return signer.TestSigner(ring.signing[k.key_id])
     pub = ring.active() if role == 'uso' else next(k for k, r in zip(ring.keys, ring.roles) if r == role)
     path = Path(args.key) if getattr(args, 'key', None) else signer.default_key_path(ring.secret_name(role))
-    return signer.MinisignSigner(path, pub)
+    return signer.MinisignSigner(path, pub, allow_plain=(role == 'uso'))
+
+
+def check_key(exe, key: Path, ring):
+    """`keys check`: firma un archivo de prueba con `key` y lo comprueba con el llavero, con contraseña o sin. La de
+    reserva tiene que estar cifrada; la de uso puede no estarlo (con un aviso). Devuelve (índice, rol, cifrada)."""
+    if not key.exists():
+        raise SystemExit(f'No está la clave {key}.')
+    encrypted = minisig.secret_key_is_encrypted(key.read_text(encoding='utf-8'))
+    with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
+        f = Path(tmp) / 'prueba.txt'
+        f.write_text('simulacro de pes6pkg keys check\n', encoding='utf-8')
+        if encrypted:
+            say(f'minisign va a pedir la contraseña de {key}.')
+        argv = [exe, '-S', '-s', str(key), '-m', str(f), '-t', 'pes6pkg keys check']
+        if subprocess.run(argv, stdin=None if encrypted else subprocess.DEVNULL).returncode:
+            raise SystemExit('La clave no abrió con esa contraseña.' if encrypted else 'minisign no pudo firmar con la clave.')
+        sig = (Path(str(f) + '.minisig')).read_text(encoding='utf-8')
+        i, _ = minisig.verify(f.read_bytes(), sig, ring.keys)
+    role = ring.roles[i]
+    if not encrypted:
+        if role == 'reserva':
+            raise SystemExit(f'{key} es la clave de reserva ({ring.keys[i].id_hex}) y NO tiene contraseña: tiene que estar '
+                             f'cifrada. Ciframela con `minisign -C -s {key}` y rehacé sus copias fuera de línea.')
+        signer.warn_plain_key(key)
+    return i, role, encrypted
 
 
 def banner(args, end=False):
@@ -74,15 +99,9 @@ def cmd_keys(args):
     if args.what == 'check':
         key = Path(args.key)
         ring = keys.load_production(REPO)
-        with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
-            f = Path(tmp) / 'prueba.txt'
-            f.write_text('simulacro de pes6pkg keys check\n', encoding='utf-8')
-            say(f'minisign va a pedir la contraseña de {key}.')
-            if subprocess.run([exe, '-S', '-s', str(key), '-m', str(f), '-t', 'pes6pkg keys check']).returncode:
-                raise SystemExit('La clave no abrió con esa contraseña.')
-            sig = (Path(str(f) + '.minisig')).read_text(encoding='utf-8')
-            i, _ = minisig.verify(f.read_bytes(), sig, ring.keys)
-        say(f'Bien: {key} abre y firma, y es la clave {ring.keys[i].id_hex} ({ring.roles[i]}). El índice no cambió.')
+        i, role, encrypted = check_key(exe, key, ring)
+        say(f'Bien: {key} abre y firma, y es la clave {ring.keys[i].id_hex} ({role}'
+            f'{", sin contraseña" if not encrypted else ""}). El índice no cambió.')
         return
     if args.what == 'new':
         meta = REPO / 'keys' / 'keys.json'

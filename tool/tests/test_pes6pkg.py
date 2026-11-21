@@ -380,13 +380,53 @@ class Cli(unittest.TestCase):
                 signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign')
             self.assertIn('dentro del repo', str(e.exception))
 
-    def test_signer_refuses_plain_key(self):
+    def test_signer_plain_key_only_for_use(self):
+        """Sin contraseña: la clave de uso se acepta con un aviso; la de reserva (allow_plain=False), no."""
         with tempfile.TemporaryDirectory() as tmp:
-            k = Path(tmp) / 'k1.key'
+            k = Path(tmp) / 'k2.key'
             k.write_text('untrusted comment: x\n' + base64.b64encode(b'Ed\0\0B2' + b'\0' * 152).decode() + '\n')
             with self.assertRaises(SystemExit) as e:
                 signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign')
             self.assertIn('no está cifrada', str(e.exception))
+            self.assertIn('minisign -C -s', str(e.exception))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                s = signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign', allow_plain=True)
+                signer.MinisignSigner(k, keys.load_test().keys[0], minisign_exe='minisign', allow_plain=True)
+            self.assertFalse(s.encrypted)
+            self.assertEqual(out.getvalue().count('no tiene contraseña'), 1)  # avisa una vez por comando
+
+
+@unittest.skipUnless(shutil.which('minisign'), 'hace falta minisign')
+class MinisignPlain(unittest.TestCase):
+    """Con el minisign de verdad y una clave sin contraseña recién creada (-G -W): firma sin preguntar nada, y
+    `keys check` sirve con ella (avisa si es la de uso, falla si es la de reserva)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='pes6pkg-minisign-'))
+        self.addCleanup(rm_tree, self.tmp)
+        self.exe = shutil.which('minisign')
+        self.key, pub = self.tmp / 'k.key', self.tmp / 'k.pub'
+        r = subprocess.run([self.exe, '-G', '-W', '-p', str(pub), '-s', str(self.key)], capture_output=True,
+                           stdin=subprocess.DEVNULL)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.pub = minisig.parse_public_key(pub.read_text(encoding='utf-8'))
+
+    def test_signs_without_asking(self):
+        with redirect_stdout(io.StringIO()) as out:
+            s = signer.MinisignSigner(self.key, self.pub, minisign_exe=self.exe, allow_plain=True)
+            sig = s.sign(b'indice', 'pes6pkg index 2')
+        self.assertEqual(minisig.verify(b'indice', sig, [self.pub]), (0, 'pes6pkg index 2'))
+        self.assertIn('(sin contraseña)', out.getvalue())
+
+    def test_keys_check(self):
+        ring = keys.Keyring([self.pub], ['uso'], False, {}, ['k.pub'])
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.check_key(self.exe, self.key, ring), (0, 'uso', False))
+        ring = keys.Keyring([self.pub], ['reserva'], False, {}, ['k.pub'])
+        with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):
+            cli.check_key(self.exe, self.key, ring)
+        self.assertIn('NO tiene contraseña', str(e.exception))
 
 
 class Rotate(unittest.TestCase):
