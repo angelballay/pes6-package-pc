@@ -1,0 +1,7 @@
+# Lo firmado va con sus bytes exactos: si git lo pasara a CRLF, la firma no coincidiría (design §14).
+index/** -text
+manifests/** -text
+keys/** -text
+*.minisig -text
+tool/tests/data/** -text
+client/vendor/** -text

@@ -1,0 +1,3 @@
+@echo off
+rem pes6pkg desde la raíz de pes6-package-pc: pes6pkg <comando> ...
+python -I "%~dp0tool\run.py" %*

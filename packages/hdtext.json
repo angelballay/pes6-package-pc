@@ -1,0 +1,58 @@
+{
+  "recipe": "pes6pkg-recipe/1",
+  "package": "hdtext",
+  "name": "PES6 HD Text",
+  "release": {
+    "repo": "angelballay/pes6-hd-text",
+    "tag": "v{version}",
+    "archive": "PES6_HD_Text_v{version}.zip"
+  },
+  "requires": [],
+  "files": [
+    {
+      "path": "Kitserver/pes6_hd_text.dll",
+      "install": true,
+      "pe_version": true,
+      "embeds_keys": true,
+      "from": "pes6_hd_text_code: build_release.cmd -> build_release/pes6_hd_text.dll"
+    },
+    {
+      "path": "Kitserver/hdtext.exe",
+      "install": true,
+      "pe_version": true,
+      "embeds_keys": true,
+      "from": "pes6_hd_text_code: build_cfgtool.cmd -> build_release/hdtext.exe"
+    },
+    {
+      "glob": "Kitserver/GDB/fonts/HD_*.bin",
+      "min": 1,
+      "install": true,
+      "from": "las fuentes HD del paquete (pes6-hd-text/fonts)"
+    },
+    {
+      "path": "Kitserver/GDB/fonts/FONT_LICENSES.txt",
+      "install": true
+    },
+    {
+      "glob": "Kitserver/GDB/fonts/licenses/*.txt",
+      "min": 1,
+      "install": true
+    },
+    {
+      "path": "README.txt",
+      "install": false
+    },
+    {
+      "path": "LEEME.txt",
+      "install": false
+    },
+    {
+      "path": "CHANGELOG.md",
+      "install": false
+    },
+    {
+      "path": "LICENSE.txt",
+      "install": false
+    }
+  ]
+}
