@@ -16,19 +16,23 @@ def load(repo: Path, ring, check_expiry_at=None, trust_revoked=True):
     ip, sp = paths(repo)
     if not ip.exists():
         return None
-    data, sig = ip.read_bytes(), sp.read_text(encoding='utf-8')
+    return parse(ip.read_bytes(), sp.read_text(encoding='utf-8'), ring, check_expiry_at, trust_revoked)
+
+
+def parse(data: bytes, sig: str, ring, check_expiry_at=None, trust_revoked=True, where='El índice del repo'):
+    """Lo mismo que `load`, con los bytes ya leídos (por ejemplo, de `git show origin/main:index/index.json`)."""
     if b'\r' in data:
-        raise SystemExit(f'{ip} tiene CR: git lo convirtió. Revisá .gitattributes (-text) y volvé a hacer checkout.')
+        raise SystemExit(f'{where} tiene CR: git lo convirtió. Revisá .gitattributes (-text) y volvé a hacer checkout.')
     try:
         idx, comment = minisig.verify(data, sig, ring.keys, () if trust_revoked else ring.revoked_ids())
         doc = jsonr.loads(data)
         serial, issued, expires = model.validate_index(doc)
     except (minisig.MinisigError, jsonr.JsonError, model.ModelError) as e:
-        raise SystemExit(f'El índice del repo no pasa la comprobación: {e}')
+        raise SystemExit(f'{where} no pasa la comprobación: {e}')
     if comment != model.index_comment(serial):
-        raise SystemExit('El índice del repo tiene otro comentario confiable que su serial.')
+        raise SystemExit(f'{where} tiene otro comentario confiable que su serial.')
     if check_expiry_at is not None and check_expiry_at >= expires:
-        raise SystemExit(f'El índice del repo venció el {model.format_utc(expires)}.')
+        raise SystemExit(f'{where} venció el {model.format_utc(expires)}.')
     return doc
 
 

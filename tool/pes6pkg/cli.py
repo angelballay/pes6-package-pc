@@ -11,11 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import index as index_mod
-from . import jsonr, keys, minisig, model, package, reminders, signer, vectors, verify
-from .ghcli import Gh, Runner
+from . import jsonr, keys, minisig, model, package, publish, reminders, signer, vectors, verify
+from .ghcli import DRY, LOCAL, REAL, Gh, Runner
 
 REPO = Path(__file__).resolve().parents[2]
-CENTRAL = 'angelballay/pes6-package-pc'
+CENTRAL = publish.CENTRAL
+_check_dir = publish.check_dir
+_download = publish.download
+ci_problems = publish.ci_problems
+BINARY_SUFFIXES = publish.BINARY_SUFFIXES
 
 
 def now_utc():
@@ -162,38 +166,13 @@ def cmd_build(args):
     req = None
     if args.requires:
         req = [{'package': r.split('=')[0], 'min': r.split('=')[1]} for r in args.requires]
-    out, info = package.build(REPO, args.package, args.version, args.from_dir, args.out, sg, ring, args.released,
-                              args.recipes, req)
+    out, info = package.build(REPO, args.package, args.version, args.from_dir, out_dir(args), sg, ring,
+                              args.released, args.recipes, req)
     say(f'Armado {out}:')
     say(f'  {info["archive"]["name"]}  {info["archive"]["size"]} bytes  SHA-256 {info["archive"]["sha256"]}')
     say(f'  {info["manifest"]["name"]} (+ .minisig)')
     if ring.test:
-        say('  OJO: firmado con claves de PRUEBA; `release` no lo publica.')
-
-
-def _check_dir(folder: Path, ring, use_minisign=True):
-    info = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
-    zb = (folder / info['archive']['name']).read_bytes()
-    mb = (folder / info['manifest']['name']).read_bytes()
-    ms = (folder / (info['manifest']['name'] + '.minisig')).read_text(encoding='utf-8')
-    verify.check_bytes(zb, info['archive'])
-    verify.check_bytes(mb, info['manifest'])
-    doc = verify.check_manifest(mb, ms, ring.keys, verify.State(revoked=ring.revoked_ids()), info['package'],
-                                info['version'])
-    res = verify.check_zip(zb, ring.keys, verify.State(revoked=ring.revoked_ids()), [info['package']])
-    inner = verify.read_entry(zb, next(e for e in verify.open_zip(zb)
-                                       if e.name == model.manifest_zip_path(info['package'])), len(mb))
-    if inner != mb:
-        raise verify.VerifyError('E_HASH', 'el manifiesto del zip no es el mismo que el asset')
-    if info['package'].startswith('translation-') and any(
-            p.lower() == 'kitserver/translations.dll' for _, files in res for p in files):
-        raise verify.VerifyError('E_PATH_NOT_ALLOWED', 'un zip de idioma no trae la DLL (cambio 1)')
-    exe = signer.find_minisign(required=False, pinned=False) if use_minisign else None
-    if exe and not ring.test:
-        if not signer.minisign_verify(exe, mb, ms, ring.active()):
-            raise verify.VerifyError('E_BAD_SIGNATURE', 'minisign -V no acepta la firma del manifiesto')
-        say('  minisign -V: la firma del manifiesto vale.')
-    return info, doc
+        say('  OJO: firmado con claves de PRUEBA; `release` e `index add` solo lo usan en un simulacro local.')
 
 
 def cmd_check(args):
@@ -213,103 +192,53 @@ def _notes_file(args, tmp):
     return p
 
 
-def _git(run, *a):
-    return run(['git', '-C', str(REPO), *a])
+def out_dir(args):
+    """`--out`, o `out/` del repo. Con claves de prueba, `out/prueba/`: un simulacro nunca pisa un paquete real."""
+    if getattr(args, 'out', None):
+        return Path(args.out)
+    return REPO / 'out' / 'prueba' if args.test_keys else REPO / 'out'
 
 
-def _publish_index(args, run, gh, ring, sg, entries, title, prev):
-    """Firma el índice siguiente y abre el PR. Simulado o con claves de prueba, escribe todo en out/simulado/ y no toca
-    ni git ni el índice del repo."""
-    doc = index_mod.next_index(prev, now_utc(), entries, args.days)
-    data, sig = index_mod.sign(doc, sg, ring)
-    simulated = run.dry_run or ring.test
-    root = Path(args.out) / 'simulado' if simulated else REPO
-    branch = f'publicar/indice-{doc["serial"]}'
-    if not simulated:
-        _git(run, 'switch', '-c', branch, 'origin/main')
-    index_mod.write(root, data, sig)
-    for e in entries:
-        folder = Path(args.out) / e['package'] / e['version']
-        dst = root / 'manifests' / e['package']
-        dst.mkdir(parents=True, exist_ok=True)
-        for suf in ('', '.minisig'):
-            src = folder / f'{e["package"]}-{e["version"]}.manifest.json{suf}'
-            (dst / f'{e["version"]}.manifest.json{suf}').write_bytes(src.read_bytes())
-    ics = Path(args.out) / f'recordatorios-indice-{doc["serial"]}.ics'
-    ics.parent.mkdir(parents=True, exist_ok=True)
-    ics.write_text(reminders.ics(model.parse_utc(doc['expires']), doc['serial']), encoding='utf-8', newline='')
-    if simulated:
-        say(f'(simulado) índice {doc["serial"]} firmado en {root / "index"}; no se tocó git ni el índice del repo.')
+def signer_precheck(args, ring):
+    """Para `--dry-run`: lo que va a hacer falta para firmar de verdad, sin abrir la clave."""
+    out = []
+    path = Path(args.key) if getattr(args, 'key', None) else signer.default_key_path(ring.secret_name('uso'))
+    if not path.exists():
+        out.append(f'no está la clave {path}')
+    try:
+        signer.find_minisign()
+    except SystemExit as e:
+        out.append(str(e))
+    return out
+
+
+def publisher(args):
+    """Con las claves reales: los repos reales (`--dry-run` corre solo las lecturas y no firma). Con las de prueba: un
+    simulacro local, sin git, sin gh y sin red."""
+    ring = ring_for(args)
+    if ring.test:
+        run, central = Runner(LOCAL), None
     else:
-        _git(run, 'add', 'index', 'manifests')
-        _git(run, 'commit', '-m', f'Índice {doc["serial"]}: {title}')
-        _git(run, 'push', '-u', 'origin', branch)
-        pr = gh.pr_create(CENTRAL, branch, f'Índice {doc["serial"]}: {title}',
-                          f'{title}. Vence el {doc["expires"][:10]}. Comprobado con `pes6pkg` antes de abrir el PR.')
-        say(f'Índice {doc["serial"]} firmado, vence el {doc["expires"][:10]}. PR: {pr.strip()}')
-    say(f'Recordatorios de calendario: {ics} (importalo en tu calendario).')
-    return doc
-
-
-def _download(url, limit):
-    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'pes6pkg'}), timeout=60) as r:
-        data = r.read(limit + 1)
-    if len(data) > limit:
-        raise verify.VerifyError('E_TOO_BIG', url)
-    return data
+        run = Runner(DRY if args.dry_run else REAL)
+        central = publish.Central(CENTRAL, REPO, run)
+    return publish.Publisher(ring, run, Gh(run), central, out_dir(args), lambda: signer_for(args, ring), now_utc,
+                             args.days, precheck=lambda: signer_precheck(args, ring))
 
 
 def cmd_release(args):
-    ring = ring_for(args)
-    if ring.test:
-        raise SystemExit('Con claves de prueba no se publica nada (KEY-8).')
-    folder = Path(args.out) / args.package / args.version
-    info, _ = _check_dir(folder, ring)
-    if info.get('test_keys'):
-        raise SystemExit('Ese paquete se armó con claves de prueba: armalo de nuevo sin --test-keys.')
-    prev = index_mod.load(REPO, ring)
-    if prev and model.parse_utc(prev['expires']) <= now_utc():
-        say('El índice está vencido: este release también lo renueva (el índice nuevo vence en 90 días).')
-    run = Runner(args.dry_run)
-    gh = Gh(run)
-    repo, tag = info['repo'], info['tag']
-    if not args.dry_run and gh.release_exists(repo, tag):
-        raise SystemExit(f'Ya existe el release {tag} en {repo}.')
-    with tempfile.TemporaryDirectory(prefix='pes6pkg-') as tmp:
-        files = [folder / info['archive']['name'], folder / info['manifest']['name'],
-                 folder / (info['manifest']['name'] + '.minisig')]  # el zip primero (FMT-9)
-        gh.release_create_draft(repo, tag, f'{info["name"]} {info["version"]}', _notes_file(args, tmp), files)
-        if not args.dry_run:
-            dl = Path(tmp) / 'borrador'
-            gh.release_download(repo, tag, dl)
-            for f in files:
-                if hashlib.sha256((dl / f.name).read_bytes()).digest() != hashlib.sha256(f.read_bytes()).digest():
-                    raise SystemExit(f'Lo subido de {f.name} no coincide con lo armado: no se publica.')
-            say(f'Borrador {repo} {tag}: lo subido coincide con lo armado.')
-            if input('¿Publicar? (queda inmutable) Escribí "sí": ').strip().lower() not in ('sí', 'si'):
-                say('Quedó en borrador. No cambió el índice.')
-                return
-        gh.release_publish(repo, tag)
-        archive_url, manifest_url, _ = package.release_urls(info)
-        if not args.dry_run:
-            verify.check_bytes(_download(archive_url, verify.MAX_ARCHIVE), info['archive'])
-            verify.check_bytes(_download(manifest_url, verify.MAX_MANIFEST), info['manifest'])
-            say('Las direcciones públicas bajan lo mismo que se armó.')
-            out = gh.verify_asset(repo, tag, files[0])
-            say('gh release verify-asset: ' + ('bien.' if out else 'no respondió bien (¿release immutability prendido?).'))
-    sg = signer_for(args, ring)
-    _publish_index(args, run, gh, ring, sg, [package.index_entry(info)], f'{info["name"]} {info["version"]}', prev)
-    say('Mergeá el PR y después corré `pes6pkg verify-live`.')
+    pub = publisher(args)
+    if args.discard:
+        pub.discard(args.package, args.version)
+        return
+    pub.release(args.package, args.version, lambda tmp: _notes_file(args, tmp), with_index=not args.no_index)
+
+
+def cmd_index(args):
+    publisher(args).index_add(args.packages)
 
 
 def cmd_renew(args):
-    ring = ring_for(args)
-    # Con claves de prueba es un simulacro: no lee el índice real del repo (lo firma otra clave).
-    prev = None if ring.test else index_mod.load(REPO, ring)
-    if prev is None and not args.first:
-        raise SystemExit('No hay índice todavía. Para el primero: `pes6pkg renew --first`.')
-    run = Runner(args.dry_run or ring.test)
-    _publish_index(args, run, Gh(run), ring, signer_for(args, ring), [], 'renovación', prev)
+    publisher(args).renew(args.first)
 
 
 def cmd_status(args):
@@ -374,41 +303,6 @@ def cmd_reminders(args):
     say(f'Avisos de vencimiento: {did}.')
 
 
-BINARY_SUFFIXES = ('.zip', '.dll', '.exe', '.afs', '.bin', '.key')
-
-
-def ci_problems(root: Path, files, base_index, ring, now, changed):
-    """PUB-7: lo que la CI rechaza. `files`: lo que sigue git; `base_index`: bytes del índice de main (o None);
-    `changed`: si el PR cambia el índice. Devuelve una lista de problemas (vacía = bien)."""
-    out = [f'binario en el repo: {f}' for f in files if f.lower().endswith(BINARY_SUFFIXES)]
-    try:
-        doc = index_mod.load(root, ring, trust_revoked=False)
-    except SystemExit as e:
-        return out + [str(e)]
-    if doc is None:
-        return out
-    if changed:
-        prev = jsonr.loads(base_index)['serial'] if base_index else 0
-        if doc['serial'] != prev + 1:
-            out.append(f'el serial tiene que ser {prev + 1} (el de main + 1), no {doc["serial"]}')
-        left = (index_mod.expires_of(doc) - now).days
-        if left < 30:
-            out.append(f'el índice nuevo vence en {left} días (mínimo 30)')
-    for e in doc['packages']:
-        mp = root / 'manifests' / e['package'] / f'{e["version"]}.manifest.json'
-        if not mp.exists() or not (mp.parent / (mp.name + '.minisig')).exists():
-            out.append(f'falta {mp.relative_to(root)} (+ .minisig)')
-            continue
-        data = mp.read_bytes()
-        try:
-            verify.check_bytes(data, e['manifest'])
-            verify.check_manifest(data, (mp.parent / (mp.name + '.minisig')).read_text(encoding='utf-8'), ring.keys,
-                                  verify.State(revoked=ring.revoked_ids()), e['package'], e['version'])
-        except verify.VerifyError as x:
-            out.append(f'{mp.relative_to(root)}: {x.code} {x}')
-    return out
-
-
 def cmd_ci_check(args):
     if not args.test_keys and not (REPO / 'keys' / 'keys.json').exists():
         # antes de la ceremonia de claves: no puede haber índice; se comprueban solo los binarios
@@ -458,7 +352,7 @@ def cmd_vectors(args):
 
 def cmd_web(args):
     """WEB-2: el bloque `release` del translation.json (o del mod.json de la DLL) desde lo publicado."""
-    folder = Path(args.out) / args.package / args.version
+    folder = out_dir(args) / args.package / args.version
     info = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
     archive_url, _, _ = package.release_urls(info)
     size = info['archive']['size']
@@ -489,9 +383,22 @@ def cmd_web(args):
 
 
 def main(argv=None):
+    # Con la salida a un archivo o a otro programa, Windows usa cp1252: un nombre como «Русский» no puede cortar una
+    # publicación a mitad de camino (se escribe con «?»).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors='replace')
+        except (AttributeError, ValueError):
+            pass
     p = argparse.ArgumentParser(prog='pes6pkg', description=__doc__)
-    p.add_argument('--test-keys', action='store_true', help='usar las claves de PRUEBA (nunca para publicar)')
+    test_help = 'usar las claves de PRUEBA: release, index add y renew son un simulacro local, sin red'
+    p.add_argument('--test-keys', action='store_true', help=test_help)
+    # también después del subcomando (`pes6pkg release … --test-keys`)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument('--test-keys', action='store_true', default=argparse.SUPPRESS, help=test_help)
     sub = p.add_subparsers(dest='cmd', required=True)
+    _add = sub.add_parser
+    sub.add_parser = lambda *a, **kw: _add(*a, parents=[common], **kw)
 
     k = sub.add_parser('keys', help='claves: new | export | check')
     k.add_argument('what', choices=('new', 'export', 'check'))
@@ -507,7 +414,7 @@ def main(argv=None):
     b.add_argument('package')
     b.add_argument('version')
     b.add_argument('--from', dest='from_dir', required=True, help='carpeta con la estructura del zip')
-    b.add_argument('--out', default=str(REPO / 'out'))
+    b.add_argument('--out', help='por defecto out/ del repo (out/prueba/ con --test-keys)')
     b.add_argument('--released', help='AAAA-MM-DD (por defecto, hoy)')
     b.add_argument('--recipes', help='carpeta de recetas (por defecto ./packages o packages/ del repo central)')
     b.add_argument('--requires', nargs='*', help='paquete=versión mínima (reemplaza los de la receta)')
@@ -518,23 +425,34 @@ def main(argv=None):
     c.add_argument('folder', help='out/<paquete>/<versión>')
     c.set_defaults(fn=cmd_check)
 
-    r = sub.add_parser('release', help='publicar un paquete armado y abrir el PR del índice')
+    def index_args(a):
+        a.add_argument('--out', help='por defecto out/ del repo (out/prueba/ con --test-keys)')
+        a.add_argument('--days', type=int, default=model.DEFAULT_LIFETIME_DAYS)
+        a.add_argument('--key', help='clave de uso (por defecto %%USERPROFILE%%\\.pes6pkg\\k1.key)')
+        a.add_argument('--dry-run', action='store_true',
+                       help='solo lecturas (estado en GitHub, main, lo publicado): no sube, no firma, no pide contraseña')
+
+    r = sub.add_parser('release', help='publicar un paquete armado (y, sin --no-index, abrir el PR del índice)')
     r.add_argument('package')
     r.add_argument('version')
-    r.add_argument('--out', default=str(REPO / 'out'))
+    r.add_argument('--no-index', action='store_true',
+                   help='publicar solo el release; el índice va después, con todos, en `index add`')
+    r.add_argument('--discard', action='store_true', help='borrar el borrador de ese release (nunca uno publicado)')
     r.add_argument('--notes-file')
     r.add_argument('--notes')
-    r.add_argument('--days', type=int, default=model.DEFAULT_LIFETIME_DAYS)
-    r.add_argument('--key')
-    r.add_argument('--dry-run', action='store_true')
+    index_args(r)
     r.set_defaults(fn=cmd_release)
+
+    ix = sub.add_parser('index', help='el índice: `index add` suma releases ya publicados en un solo PR')
+    ixs = ix.add_subparsers(dest='what', required=True)
+    ia = ixs.add_parser('add', parents=[common], help='sumar releases publicados al índice: una firma, un PR')
+    ia.add_argument('packages', nargs='+', metavar='paquete@versión')
+    index_args(ia)
+    ix.set_defaults(fn=cmd_index)
 
     n = sub.add_parser('renew', help='índice nuevo con los mismos paquetes y vencimiento nuevo')
     n.add_argument('--first', action='store_true', help='el primer índice (serial 1, sin paquetes)')
-    n.add_argument('--days', type=int, default=model.DEFAULT_LIFETIME_DAYS)
-    n.add_argument('--out', default=str(REPO / 'out'))
-    n.add_argument('--key')
-    n.add_argument('--dry-run', action='store_true')
+    index_args(n)
     n.set_defaults(fn=cmd_renew)
 
     s = sub.add_parser('status', help='vencimiento y paquetes del índice')
@@ -565,7 +483,7 @@ def main(argv=None):
     w.add_argument('package')
     w.add_argument('version')
     w.add_argument('--translations-repo', required=True)
-    w.add_argument('--out', default=str(REPO / 'out'))
+    w.add_argument('--out')
     w.set_defaults(fn=cmd_web)
 
     args = p.parse_args(argv)

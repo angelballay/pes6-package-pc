@@ -2,20 +2,26 @@
 import base64
 import io
 import json
+import os
+import re
+import shutil
+import stat
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
 import zipfile
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from pes6pkg import ed25519, index, jsonr, keys, minisig, model, package, pever, reminders, signer, vectors, verify  # noqa
-from pes6pkg import cli  # noqa: E402
+from pes6pkg import cli, publish  # noqa: E402
 from pes6pkg.ghcli import DRY, LOCAL, REAL, Gh, Runner  # noqa: E402
 
 INTEROP = HERE / 'data' / 'interop'
@@ -337,13 +343,25 @@ class Cli(unittest.TestCase):
                                             ring.keys, verify.State(), cli.now_utc())
             self.assertEqual(doc['serial'], 1)
             self.assertIn('no se tocó git', out.getvalue())
-            self.assertTrue(list(Path(tmp).glob('recordatorios-indice-1.ics')))
+            # el .ics de un simulacro no pisa el real de out/
+            self.assertTrue(list((Path(tmp) / 'simulado').glob('recordatorios-indice-1.ics')))
+            self.assertFalse(list(Path(tmp).glob('recordatorios-indice-1.ics')))
             self.assertEqual(real.read_bytes() if real.exists() else None, before)
 
-    def test_release_refuses_test_keys(self):
+    def test_test_keys_never_mix_with_real_builds(self):
+        """Con claves de prueba, out/ por defecto es out/prueba/, y un paquete real no entra a un simulacro."""
+        import argparse
+        self.assertEqual(cli.out_dir(argparse.Namespace(out=None, test_keys=True)), cli.REPO / 'out' / 'prueba')
+        self.assertEqual(cli.out_dir(argparse.Namespace(out=None, test_keys=False)), cli.REPO / 'out')
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             cli.main(['--test-keys', 'release', 'hdtext', '1.0.2', '--dry-run'])
-        self.assertIn('KEY-8', str(e.exception))
+        self.assertIn(str(Path('out') / 'prueba' / 'hdtext'), str(e.exception))
+
+    def test_test_keys_after_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                cli.main(['renew', '--first', '--test-keys', '--out', tmp])
+            self.assertTrue((Path(tmp) / 'simulado' / 'index' / 'index.json').exists())
 
     def test_signer_refuses_key_in_repo(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -405,6 +423,20 @@ class CiCheck(unittest.TestCase):
             self.assertTrue(any('no pasa' in p for p in cli.ci_problems(root, [], base_data, ring, now, True)))
 
 
+class CiUrls(unittest.TestCase):
+    def test_url_outside_prefixes(self):
+        ring = keys.load_test()
+        sg = signer.TestSigner(ring.signing[ring.keys[0].key_id])
+        now = datetime(2026, 12, 5, 21, 30, tzinfo=timezone.utc)
+        entry = vectors._Gen.index_doc(None)['packages'][0]
+        entry = dict(entry, archive=dict(entry['archive'], url='https://github.com/otro/repo/releases/download/v1/x.zip'))
+        with tempfile.TemporaryDirectory() as tmp:
+            data, sig = index.sign(index.next_index(None, now, [entry]), sg, ring)
+            index.write(Path(tmp), data, sig)
+            probs = cli.ci_problems(Path(tmp), [], None, ring, now, True)
+            self.assertTrue(any('otro/repo' in p and 'permitidas' in p for p in probs), probs)
+
+
 class RunnerModes(unittest.TestCase):
     def test_modes(self):
         cmd = [sys.executable, '-c', 'print("hola")']
@@ -448,6 +480,504 @@ class RunnerModes(unittest.TestCase):
             self.assertTrue(by[k][1], k)
         for k in ('create', 'upload', 'edit', 'delete'):
             self.assertFalse(by[k][1], k)
+
+
+# ---------------------------------------------------------------- publicar: remoto git local + gh falso
+
+GIT_ID = {'GIT_AUTHOR_NAME': 'prueba', 'GIT_AUTHOR_EMAIL': 'prueba@example.invalid',
+          'GIT_COMMITTER_NAME': 'prueba', 'GIT_COMMITTER_EMAIL': 'prueba@example.invalid'}
+NOW = datetime(2026, 12, 5, 21, 30, tzinfo=timezone.utc)
+REPO_T = 'angelballay/pes6xlife-translations'
+
+
+def git(*a):
+    r = subprocess.run(['git', *a], capture_output=True, text=True, encoding='utf-8')
+    if r.returncode:
+        raise AssertionError(f'git {a}: {r.stderr}')
+    return r.stdout
+
+
+def rm_tree(p):
+    def fix(func, path, _):
+        os.chmod(path, stat.S_IWRITE)  # los objetos de git son de solo lectura en Windows
+        func(path)
+    shutil.rmtree(p, **({'onexc': fix} if sys.version_info >= (3, 12) else {'onerror': fix}))
+
+
+class FakeReleases:
+    """gh falso: releases por repo (borradores y publicados), lo que baja un jugador por URL, y los PR. Como con el
+    Runner real, en modo simulado las escrituras no cambian nada."""
+
+    def __init__(self, run):
+        self.run = run
+        self.rel = {}  # (repo, tag) -> [{draft, immutable, assets {nombre: bytes}, states {nombre: estado}}]
+        self.calls = []
+        self.prs = []
+        self.fail_upload = False
+
+    def _write(self, *call):
+        self.calls.append(call)
+        return self.run.mode == REAL
+
+    def rows(self, repo, tag):
+        return self.rel.get((repo, tag), [])
+
+    def found(self, repo, tag):
+        """Lo que encuentra gh por tag: el publicado, o el primer borrador."""
+        rows = self.rows(repo, tag)
+        return next((r for r in rows if not r['draft']), rows[0] if rows else None)
+
+    def count(self, what):
+        return sum(1 for c in self.calls if c[0] == what)
+
+    def release_list(self, repo):
+        return [{'tagName': t, 'isDraft': r['draft'], 'isImmutable': r['immutable']}
+                for (rp, t), rows in self.rel.items() if rp == repo for r in rows]
+
+    def release_view(self, repo, tag):
+        r = self.found(repo, tag)
+        if r is None:
+            raise SystemExit('release not found')
+        return {'tagName': tag, 'isDraft': r['draft'], 'isImmutable': r['immutable'],
+                'assets': [{'name': n, 'size': len(b), 'state': r['states'].get(n, 'uploaded'), 'digest': None}
+                           for n, b in r['assets'].items()]}
+
+    def release_create_draft(self, repo, tag, title, notes_file, files):
+        if not self._write('create', repo, tag, [Path(f).name for f in files]):
+            return
+        if any(not r['draft'] for r in self.rows(repo, tag)):
+            raise SystemExit('a release with the same tag name already exists')
+        self.rel.setdefault((repo, tag), []).append({'draft': True, 'immutable': False, 'states': {},
+                                                     'assets': {Path(f).name: Path(f).read_bytes() for f in files}})
+
+    def release_upload(self, repo, tag, files):
+        if not self._write('upload', repo, tag, [Path(f).name for f in files]):
+            return
+        r = self.found(repo, tag)
+        assert r['draft'], 'subió a un release publicado'
+        if self.fail_upload:
+            r['assets'][Path(files[0]).name] = b'a medias'
+            r['states'][Path(files[0]).name] = 'starter'
+            raise SystemExit('Falló: gh release upload (se cortó la red)')
+        for f in files:
+            r['assets'][Path(f).name] = Path(f).read_bytes()
+
+    def release_download(self, repo, tag, directory):
+        self.calls.append(('download', repo, tag))
+        for n, b in self.found(repo, tag)['assets'].items():
+            (Path(directory) / n).write_bytes(b)
+
+    def release_publish(self, repo, tag):
+        if not self._write('publish', repo, tag):
+            return
+        r = self.found(repo, tag)
+        r['draft'], r['immutable'] = False, True
+
+    def release_delete(self, repo, tag):
+        if not self._write('delete', repo, tag):
+            return
+        r = self.found(repo, tag)
+        assert r['draft'], 'borró un release publicado'
+        self.rows(repo, tag).remove(r)
+
+    def verify_asset(self, repo, tag, path):
+        self.calls.append(('verify-asset', repo, tag))
+        r = self.found(repo, tag)
+        ok = r and not r['draft'] and r['immutable'] and r['assets'].get(Path(path).name) == Path(path).read_bytes()
+        return f'Verification succeeded! {Path(path).name} is present in release {tag}\n' if ok else ''
+
+    def pr_create(self, repo, branch, title, body):
+        if not self._write('pr', repo, branch):
+            return ''
+        self.prs.append({'repo': repo, 'branch': branch, 'title': title, 'body': body})
+        return f'https://github.com/{repo}/pull/{len(self.prs)}\n'
+
+    def public(self, url, limit):
+        """Lo que baja un jugador, sin sesión: solo lo publicado."""
+        m = re.match(r'^https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)$', url)
+        r = self.found(m.group(1), m.group(2)) if m else None
+        if r is None or r['draft'] or m.group(3) not in r['assets']:
+            raise OSError(f'HTTP 404 {url}')
+        return r['assets'][m.group(3)]
+
+
+class CountingSigner:
+    """La clave de uso de prueba, contando las firmas. `fail`: cuántas veces falla (contraseña equivocada);
+    `during`: algo que pasa mientras se pide la contraseña."""
+
+    def __init__(self, ring, fail=0, during=None):
+        self.inner = signer.TestSigner(ring.signing[ring.keys[0].key_id])
+        self.public, self.test = self.inner.public, True
+        self.n, self.fail, self.during = 0, fail, during
+
+    def sign(self, data, comment):
+        self.n += 1
+        if self.during:
+            self.during()
+        if self.fail:
+            self.fail -= 1
+            raise SystemExit('minisign no pudo firmar (¿contraseña equivocada?). No se cambió nada.')
+        return self.inner.sign(data, comment)
+
+
+def recipes():
+    def rel(tag, archive):
+        return {'repo': REPO_T, 'tag': tag, 'archive': archive}
+    out = {'translations': {
+        'recipe': 'pes6pkg-recipe/1', 'package': 'translations', 'name': 'PES6 Translations',
+        'release': rel('dll-v{version}', 'PES6_Translations_DLL_v{version}.zip'),
+        'requires': [{'package': 'hdtext', 'min': '1.0.2'}],
+        'files': [{'path': 'Kitserver/translations.dll', 'install': True, 'pe_version': True},
+                  {'path': 'README.txt', 'install': False}]}}
+    for code, name in (('ru', 'Русский'), ('el', 'Ελληνικά')):
+        out[f'translation-{code}'] = {
+            'recipe': 'pes6pkg-recipe/1', 'package': f'translation-{code}', 'name': name,
+            'release': rel(f'{code}-v{{version}}', f'PES6_Translation_{code}_v{{version}}.zip'),
+            'requires': [{'package': 'hdtext', 'min': '1.0.2'}, {'package': 'translations', 'min': '1.0'}],
+            'files': [{'path': f'dat/{code}_text.afs', 'install': True}, {'path': 'README.txt', 'install': False}]}
+    return out
+
+
+def build_day(tmp: Path, ring, out: Path):
+    """Los paquetes del día, armados con `ring` (y la clave de uso de prueba) en `out`."""
+    rec = tmp / 'recetas'
+    rec.mkdir(exist_ok=True)
+    for pkg, r in recipes().items():
+        (rec / f'{pkg}.json').write_text(json.dumps(r, ensure_ascii=False), encoding='utf-8')
+    sg = signer.TestSigner(keys.load_test().signing[ring.keys[0].key_id])
+    src = tmp / 'src-translations'
+    (src / 'Kitserver').mkdir(parents=True)
+    (src / 'Kitserver' / 'translations.dll').write_bytes(fake_pe('1.0'))
+    (src / 'README.txt').write_text('dll')
+    todo = [('translations', '1.0', src, rec)]
+    for code in ('ru', 'el'):
+        s = tmp / f'src-{code}'
+        (s / 'dat').mkdir(parents=True)
+        (s / 'dat' / f'{code}_text.afs').write_bytes(b'AFS\0' + code.encode() * 500)
+        (s / 'README.txt').write_text(code)
+        todo.append((f'translation-{code}', '1.0', s, rec))
+    if ring.test:
+        hd_folder(tmp / 'src-hd', ring=ring)
+        todo.append(('hdtext', '1.0.2', tmp / 'src-hd', None))
+    with redirect_stdout(io.StringIO()):
+        for pkg, ver, s, r in todo:
+            package.build(cli.REPO, pkg, ver, s, out, sg, ring, '2026-12-05', recipes_dir=r)
+
+
+class Publicar(unittest.TestCase):
+    """release --no-index, index add, retomar, descartar y completar, contra un repo central en un git local (bare) y
+    un gh falso, con las claves de prueba."""
+    DAY = ['translations@1.0', 'translation-ru@1.0', 'translation-el@1.0', 'hdtext@1.0.2']
+
+    @classmethod
+    def setUpClass(cls):
+        cls._env = {k: os.environ.get(k) for k in GIT_ID}
+        os.environ.update(GIT_ID)
+
+    @classmethod
+    def tearDownClass(cls):
+        for k, v in cls._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='pes6pkg-prueba-'))
+        self.addCleanup(rm_tree, self.tmp)
+        self.ring = keys.load_test()
+        self.sg = CountingSigner(self.ring)
+        self.out = self.tmp / 'out'
+        build_day(self.tmp, self.ring, self.out)
+        self.bare, self.clone = self.make_central()
+        self.run = Runner(REAL)
+        self.run.echo = False
+        self.gh = FakeReleases(self.run)
+
+    def make_central(self):
+        """main con el índice 1 firmado, como el repo real hoy; y el clon de quien publica."""
+        bare = self.tmp / 'central.git'
+        git('init', '--quiet', '--bare', '-b', 'main', str(bare))
+        seed = self.tmp / 'semilla'
+        git('clone', '--quiet', str(bare), str(seed))
+        (seed / '.gitattributes').write_bytes(b'index/** -text\nmanifests/** -text\n')
+        data, sig = index.sign(index.next_index(None, NOW - timedelta(days=1)),
+                               signer.TestSigner(self.ring.signing[self.ring.keys[0].key_id]), self.ring)
+        index.write(seed, data, sig)
+        git('-C', str(seed), 'add', '.')
+        git('-C', str(seed), 'commit', '--quiet', '-m', 'Índice 1')
+        git('-C', str(seed), 'push', '--quiet', 'origin', 'HEAD:main')
+        clone = self.tmp / 'clon'
+        git('clone', '--quiet', str(bare), str(clone))
+        return bare, clone
+
+    def pub(self, ask='sí', signer_=None, run=None, ring=None, out=None, make_signer=None, precheck=None, url=None):
+        run = run or self.run
+        self.gh.run = run
+        central = publish.Central(publish.CENTRAL, self.clone, run, url=str(self.bare) if url is None else url)
+        return publish.Publisher(ring or self.ring, run, self.gh, central, out or self.out,
+                                 make_signer or (lambda: signer_ or self.sg), lambda: NOW,
+                                 ask=lambda prompt: ask == 'sí', fetch=self.gh.public, precheck=precheck)
+
+    # -- ayudas
+    def say(self, fn, *a):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            fn(*a)
+        return out.getvalue()
+
+    def fails(self, fn, *a):
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit) as e:
+            fn(*a)
+        return str(e.exception), out.getvalue()
+
+    def notes(self, tmp):
+        p = Path(tmp) / 'notas.md'
+        p.write_text('notas', encoding='utf-8')
+        return p
+
+    def release(self, pub, spec, with_index=False):
+        p, v = spec.split('@')
+        return self.say(pub.release, p, v, self.notes, with_index)
+
+    def remote_index(self, ref='main'):
+        return jsonr.loads(subprocess.run(['git', '-C', str(self.bare), 'show', f'{ref}:index/index.json'],
+                                          capture_output=True).stdout)
+
+    def branches(self):
+        return git('-C', str(self.bare), 'branch', '--format=%(refname:short)').split()
+
+    def merge(self, branch):
+        git('-C', str(self.bare), 'update-ref', 'refs/heads/main', f'refs/heads/{branch}')
+
+    def published(self, tag, repo=REPO_T):
+        r = self.gh.found(repo, tag)
+        return bool(r) and not r['draft']
+
+    # -- el día de la publicación
+    def test_lote_un_indice_una_firma_un_pr(self):
+        pub = self.pub()
+        for spec in self.DAY:
+            self.assertIn('Falta el índice', self.release(pub, spec))
+        self.assertEqual((self.sg.n, self.gh.prs, self.remote_index()['serial']), (0, [], 1))  # sin contraseña ni PR
+        creates = [c for c in self.gh.calls if c[0] == 'create']
+        self.assertEqual(len(creates), 4)
+        self.assertTrue(all(c[3] == [c[3][0]] and c[3][0].endswith('.zip') for c in creates))  # el zip solo, primero
+        self.assertEqual(self.gh.count('upload'), 4)
+
+        out = self.say(pub.index_add, self.DAY)
+        self.assertEqual(self.sg.n, 1)
+        self.assertEqual([p['branch'] for p in self.gh.prs], ['publicar/indice-2'])
+        self.assertIn('Índice 2: 4 paquetes', self.gh.prs[0]['title'])
+        self.assertEqual(out.count('gh release verify-asset: bien.'), 4)
+        doc = self.remote_index('publicar/indice-2')
+        self.assertEqual(doc['serial'], 2)
+        self.assertEqual(sorted(e['package'] for e in doc['packages']), sorted(s.split('@')[0] for s in self.DAY))
+        # la rama pasa lo mismo que la CI: serial = main + 1, firma, manifiestos copiados byte a byte
+        chk = self.tmp / 'chk'
+        git('clone', '--quiet', '-b', 'publicar/indice-2', str(self.bare), str(chk))
+        base = subprocess.run(['git', '-C', str(self.bare), 'show', 'main:index/index.json'], capture_output=True).stdout
+        self.assertEqual(publish.ci_problems(chk, git('-C', str(chk), 'ls-files').split(), base, self.ring, NOW, True),
+                         [])
+        # el checkout de quien publica no se tocó (el PR se armó en un worktree temporal)
+        self.assertEqual(git('-C', str(self.clone), 'status', '--porcelain'), '')
+        self.assertEqual(jsonr.loads((self.clone / 'index' / 'index.json').read_bytes())['serial'], 1)
+        self.assertNotIn('arbol', git('-C', str(self.clone), 'worktree', 'list'))
+
+    def test_prev_sale_de_origin_main(self):
+        """Con el PR del índice 2 mergeado y el checkout viejo, el siguiente sale de main: serial 3, con los dos."""
+        pub = self.pub()
+        self.release(pub, 'translations@1.0')
+        self.say(pub.index_add, ['translations@1.0'])
+        self.merge('publicar/indice-2')
+        self.release(pub, 'translation-ru@1.0')
+        self.say(pub.index_add, ['translation-ru@1.0'])
+        self.assertEqual(self.gh.prs[-1]['branch'], 'publicar/indice-3')
+        doc = self.remote_index('publicar/indice-3')
+        self.assertEqual((doc['serial'], sorted(e['package'] for e in doc['packages'])),
+                         (3, ['translation-ru', 'translations']))
+        self.assertEqual(jsonr.loads((self.clone / 'index' / 'index.json').read_bytes())['serial'], 1)
+
+    def test_contrasena_equivocada_no_publica_y_se_retoma(self):
+        bad = CountingSigner(self.ring, fail=1)
+        msg, _ = self.fails(self.pub(signer_=bad).release, 'translations', '1.0', self.notes, True)
+        self.assertIn('No se publicó nada', msg)
+        self.assertIn('retoma el borrador', msg)
+        self.assertFalse(self.published('dll-v1.0'))
+        self.assertEqual(self.gh.prs, [])
+        out = self.release(self.pub(signer_=bad), 'translations@1.0', with_index=True)
+        self.assertIn('Retomo el borrador', out)
+        self.assertEqual(self.gh.count('create'), 1)  # no lo volvió a subir
+        self.assertTrue(self.published('dll-v1.0'))
+        self.assertEqual([p['branch'] for p in self.gh.prs], ['publicar/indice-2'])
+
+    def test_contestar_no_deja_un_borrador_que_se_retoma(self):
+        out = self.release(self.pub(ask='no'), 'translations@1.0', with_index=True)
+        self.assertIn('Quedó en borrador', out)
+        self.assertIn('pes6pkg --test-keys release translations 1.0 --discard', out)
+        self.assertEqual(self.sg.n, 0)  # no pidió la contraseña
+        self.assertFalse(self.published('dll-v1.0'))
+        out = self.release(self.pub(), 'translations@1.0', with_index=True)
+        self.assertIn('Retomo el borrador', out)
+        self.assertTrue(self.published('dll-v1.0'))
+        self.assertEqual(len(self.gh.prs), 1)
+
+    def test_borrador_a_medias_se_rehace(self):
+        self.gh.fail_upload = True
+        self.fails(self.pub().release, 'translations', '1.0', self.notes, False)
+        self.gh.fail_upload = False
+        out = self.release(self.pub(), 'translations@1.0')
+        self.assertIn('lo rehago', out)
+        self.assertEqual(len(self.gh.rows(REPO_T, 'dll-v1.0')), 1)
+        self.assertTrue(self.published('dll-v1.0'))
+
+    def test_discard(self):
+        pub = self.pub(ask='no')
+        self.release(pub, 'translations@1.0')
+        self.assertIn('Borrado el borrador dll-v1.0', self.say(pub.discard, 'translations', '1.0'))
+        self.assertEqual(self.gh.release_list(REPO_T), [])
+        self.assertIn('nada que descartar', self.say(pub.discard, 'translations', '1.0'))
+        self.release(self.pub(), 'translations@1.0')
+        msg, _ = self.fails(pub.discard, 'translations', '1.0')
+        self.assertIn('no se descarta', msg)
+        self.assertIn('index add translations@1.0', msg)
+        self.assertTrue(self.published('dll-v1.0'))
+
+    def test_publicado_sin_indice_se_completa(self):
+        pub = self.pub()
+        self.release(pub, 'translations@1.0')  # --no-index
+        out = self.release(pub, 'translations@1.0', with_index=True)
+        self.assertIn('completo el índice', out)
+        self.assertEqual((self.gh.count('publish'), self.gh.count('create'), len(self.gh.prs)), (1, 1, 1))
+        # mientras el PR no se mergea, un segundo intento no abre otro
+        msg, _ = self.fails(pub.release, 'translations', '1.0', self.notes, True)
+        self.assertIn('Ya hay una rama publicar/indice-2', msg)
+        self.merge('publicar/indice-2')
+        self.assertIn('Nada que hacer', self.release(pub, 'translations@1.0', with_index=True))
+        self.assertIn('Nada que hacer', self.say(pub.index_add, ['translations@1.0']))
+        self.assertEqual(self.sg.n, 1)
+
+    def test_index_add_no_firma_si_falta_alguno(self):
+        pub = self.pub()
+        self.release(pub, 'translations@1.0')
+        self.release(self.pub(ask='no'), 'translation-ru@1.0')  # borrador
+        msg, out = self.fails(pub.index_add, ['translations@1.0', 'translation-ru@1.0', 'translation-el@1.0'])
+        self.assertIn('2 de 3 paquetes no están listos', msg)
+        self.assertIn('ru-v1.0 está en borrador', out)
+        self.assertIn('release translation-el 1.0 --no-index', out)
+        self.assertEqual((self.sg.n, self.gh.prs, self.branches()), (0, [], ['main']))
+
+    def test_publicado_distinto_no_entra(self):
+        pub = self.pub()
+        self.release(pub, 'translations@1.0')
+        r = self.gh.found(REPO_T, 'dll-v1.0')
+        r['assets'][next(n for n in r['assets'] if n.endswith('.zip'))] = b'otra cosa'
+        msg, out = self.fails(pub.index_add, ['translations@1.0'])
+        self.assertIn('no están listos', msg)
+        self.assertIn('no es lo mismo que', out)
+        msg, _ = self.fails(pub.release, 'translations', '1.0', self.notes, True)
+        self.assertIn('armá una versión nueva', msg)
+        self.assertEqual((self.sg.n, self.gh.prs), (0, []))
+
+    def test_main_cambia_mientras_se_firma(self):
+        self.release(self.pub(), 'translations@1.0')
+
+        def otro_pr():  # alguien mergea otro índice 2 mientras minisign pide la contraseña
+            other = self.tmp / 'otro'
+            git('clone', '--quiet', str(self.bare), str(other))
+            prev = jsonr.loads((other / 'index' / 'index.json').read_bytes())
+            d, s = index.sign(index.next_index(prev, NOW), signer.TestSigner(self.ring.signing[self.ring.keys[0].key_id]),
+                              self.ring)
+            index.write(other, d, s)
+            git('-C', str(other), 'commit', '--quiet', '-am', 'otro índice 2')
+            git('-C', str(other), 'push', '--quiet', 'origin', 'HEAD:main')
+        msg, _ = self.fails(self.pub(signer_=CountingSigner(self.ring, during=otro_pr)).index_add, ['translations@1.0'])
+        self.assertIn('otro PR cambió el índice', msg)
+        self.assertEqual((self.branches(), self.gh.prs), (['main'], []))
+        # el reintento parte del main nuevo
+        self.say(self.pub().index_add, ['translations@1.0'])
+        self.assertEqual(self.remote_index('publicar/indice-3')['serial'], 3)
+
+    def test_renew_parte_de_main(self):
+        self.say(self.pub().renew)
+        doc = self.remote_index('publicar/indice-2')
+        self.assertEqual((doc['serial'], doc['packages']), (2, []))
+        self.assertIn('Índice 2: renovación', self.gh.prs[0]['title'])
+
+    def test_aviso_si_falta_un_requisito(self):
+        pub = self.pub()
+        self.release(pub, 'translation-ru@1.0')
+        out = self.say(pub.index_add, ['translation-ru@1.0'])
+        self.assertIn('AVISO: translation-ru 1.0 pide translations 1.0 o más nueva', out)
+        self.assertEqual(len(self.gh.prs), 1)  # avisa, no frena
+
+    def test_entradas_invalidas(self):
+        pub = self.pub()
+        self.assertIn('<paquete>@<versión>', self.fails(pub.index_add, ['translations'])[0])
+        self.assertIn('dos veces', self.fails(pub.index_add, ['translations@1.0', 'translations@1.0'])[0])
+        self.assertIn('armalo con', self.fails(pub.index_add, ['translations@9.9'])[0])
+        # un build.json que apunta a otro repo: las direcciones no serían de las que aceptan los clientes
+        bj = self.out / 'translations' / '1.0' / 'build.json'
+        bj.write_text(bj.read_text(encoding='utf-8').replace(REPO_T, 'angelballay/otro'), encoding='utf-8')
+        self.assertIn('direcciones que aceptan los clientes', self.fails(pub.index_add, ['translations@1.0'])[0])
+        self.assertEqual(self.gh.calls, [])
+
+    def test_origin_ajeno(self):
+        msg, _ = self.fails(self.pub(url='https://github.com/otro/repo.git').index_add, ['translations@1.0'])
+        self.assertIn('no publico ahí', msg)
+
+    def test_dry_run_con_claves_reales_no_firma_ni_escribe(self):
+        """--dry-run con un llavero real (acá, de producción con las claves públicas de prueba): corre las lecturas
+        (git fetch, estado en GitHub) pero no sube, no publica, no firma y no pide la contraseña."""
+        ring = keys.Keyring(self.ring.keys, ['uso', 'reserva'], False, {}, ['k1.pub', 'k2.pub'])
+        out_dir = self.tmp / 'out-real'
+        (self.tmp / 'real').mkdir()
+        build_day(self.tmp / 'real', ring, out_dir)
+        run = Runner(DRY)
+
+        def no_signer():
+            raise AssertionError('--dry-run no tiene que abrir la clave')
+
+        def no_ask(prompt):
+            raise AssertionError('--dry-run no pregunta')
+        pub = self.pub(run=run, ring=ring, out=out_dir, make_signer=no_signer, precheck=lambda: ['no está la clave X'])
+        pub.ask = no_ask
+        with mock.patch.object(signer, 'find_minisign', return_value=None):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                pub.release('translations', '1.0', self.notes, True)
+            msg, out2 = self.fails(pub.index_add, ['translations@1.0'])
+        out = out.getvalue()
+        self.assertIn('acá minisign pediría la contraseña', out)
+        self.assertIn('AVISO para el día real: no está la clave X', out)
+        self.assertIn('índice 2 vencería', out)
+        self.assertIn('no están listos', msg)  # en simulado no se publicó nada: index add lo dice
+        self.assertEqual((self.gh.release_list(REPO_T), self.gh.prs, self.branches()), ([], [], ['main']))
+        self.assertTrue(self.gh.count('create'))  # mostró qué haría
+
+    def test_salida_a_un_pipe_con_nombres_no_ascii(self):
+        """Con la salida a otro programa (cp1252 en Windows), «Русский» no corta el comando."""
+        r = subprocess.run([sys.executable, '-I', str(cli.REPO / 'tool' / 'run.py'), '--test-keys', 'release',
+                            'translation-ru', '1.0', '--no-index', '--out', str(self.out)], capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr.decode('utf-8', 'replace'))
+        self.assertIn(b'release ru-v1.0', r.stdout)
+
+    def test_simulacro_local_no_corre_nada(self):
+        """--test-keys por la CLI: release e index add sin git, sin gh y sin red; lo firmado va a out/simulado/."""
+        out = io.StringIO()
+        with mock.patch.object(subprocess, 'run', side_effect=AssertionError('corrió un comando')), \
+                mock.patch.object(publish, 'download', side_effect=AssertionError('usó la red')), \
+                redirect_stdout(out), redirect_stderr(io.StringIO()):
+            for spec in self.DAY:
+                cli.main(['--test-keys', 'release', *spec.split('@'), '--no-index', '--out', str(self.out)])
+            cli.main(['--test-keys', 'index', 'add', *self.DAY, '--out', str(self.out)])
+        idx = self.out / 'simulado' / 'index' / 'index.json'
+        doc, _, _ = verify.check_index(idx.read_bytes(), (idx.parent / 'index.json.minisig').read_text(encoding='utf-8'),
+                                       self.ring.keys, verify.State(), cli.now_utc())
+        self.assertEqual((doc['serial'], len(doc['packages'])), (1, 4))
+        self.assertTrue((self.out / 'simulado' / 'manifests' / 'hdtext' / '1.0.2.manifest.json.minisig').exists())
+        self.assertIn('(simulado) gh release create dll-v1.0', out.getvalue())
 
 
 if __name__ == '__main__':
