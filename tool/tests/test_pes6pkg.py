@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from pes6pkg import ed25519, index, jsonr, keys, minisig, model, package, pever, reminders, signer, vectors, verify  # noqa
 from pes6pkg import cli  # noqa: E402
+from pes6pkg.ghcli import DRY, LOCAL, REAL, Gh, Runner  # noqa: E402
 
 INTEROP = HERE / 'data' / 'interop'
 
@@ -402,6 +403,51 @@ class CiCheck(unittest.TestCase):
             # firma rota
             (root / 'index' / 'index.json').write_bytes(d2.replace(b'"serial": 2', b'"serial": 2 '))
             self.assertTrue(any('no pasa' in p for p in cli.ci_problems(root, [], base_data, ring, now, True)))
+
+
+class RunnerModes(unittest.TestCase):
+    def test_modes(self):
+        cmd = [sys.executable, '-c', 'print("hola")']
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(Runner(DRY)(cmd, read=True).strip(), 'hola')  # simulado: las lecturas corren
+            self.assertEqual(Runner(DRY)(cmd), '')  # y las escrituras no
+            self.assertEqual(Runner(LOCAL)(cmd, read=True), '')  # local: nada corre
+            self.assertEqual(Runner(LOCAL)(cmd, read=True, binary=True), b'')
+            self.assertEqual(Runner(REAL)(cmd).strip(), 'hola')
+        self.assertIn('(simulado)', out.getvalue())
+        self.assertIn('  $ ', out.getvalue())  # en modo real se ve cada escritura
+        self.assertEqual((Runner(True).mode, Runner(False).mode), (DRY, REAL))
+
+    def test_gh_argv(self):
+        """Lo que se le pide a gh 2.101 (docs/RECETA.md, "Qué hace cada paso"): borrador con un solo archivo, subir
+        aparte, publicar con --draft=false, borrar con --yes; list/view/download/verify-asset son lecturas."""
+        calls = []
+
+        class Rec(Runner):
+            def __call__(self, argv, **kw):
+                calls.append((list(argv), kw.get('read', False)))
+                return ''
+        gh = Gh(Rec(REAL))
+        gh.release_create_draft('o/r', 'v1', 'T', 'n.md', ['a.zip'])
+        gh.release_upload('o/r', 'v1', ['m.json', 'm.json.minisig'])
+        gh.release_publish('o/r', 'v1')
+        gh.release_delete('o/r', 'v1')
+        gh.release_list('o/r')
+        gh.release_view('o/r', 'v1')
+        gh.release_download('o/r', 'v1', 'd')
+        gh.verify_asset('o/r', 'v1', 'a.zip')
+        by = {c[0][2]: c for c in calls}
+        self.assertEqual(by['create'][0][-2:], ['n.md', 'a.zip'])
+        self.assertIn('--draft', by['create'][0])
+        self.assertEqual(by['upload'][0][-2:], ['m.json', 'm.json.minisig'])
+        self.assertIn('--draft=false', by['edit'][0])
+        self.assertIn('--yes', by['delete'][0])
+        self.assertIn('tagName,isDraft,isImmutable', by['list'][0])
+        for k in ('list', 'view', 'download', 'verify-asset'):
+            self.assertTrue(by[k][1], k)
+        for k in ('create', 'upload', 'edit', 'delete'):
+            self.assertFalse(by[k][1], k)
 
 
 if __name__ == '__main__':
