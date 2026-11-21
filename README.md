@@ -51,3 +51,11 @@ los días, `vencimiento.yml` avisa si el índice está por vencer.
 ## Seguridad
 
 Ver [SECURITY.md](SECURITY.md).
+
+## Licencia
+
+El código de este repo (`tool/` y `client/`) se publica bajo la licencia [MIT](LICENSE). `client/vendor/` trae Monocypher con su
+propia licencia.
+
+La licencia cubre el código. El índice (`index/`), los manifiestos y las claves públicas (`keys/`) identifican los paquetes
+oficiales de PityCharly: usar este código no autoriza a presentar otros paquetes como oficiales.
