@@ -324,6 +324,8 @@ class Cli(unittest.TestCase):
             self.assertIn('CLAVES DE PRUEBA', text)
 
     def test_renew_first_simulated(self):
+        real = cli.REPO / 'index' / 'index.json'
+        before = real.read_bytes() if real.exists() else None
         with tempfile.TemporaryDirectory() as tmp:
             out = io.StringIO()
             with redirect_stdout(out), redirect_stderr(io.StringIO()):
@@ -335,7 +337,7 @@ class Cli(unittest.TestCase):
             self.assertEqual(doc['serial'], 1)
             self.assertIn('no se tocó git', out.getvalue())
             self.assertTrue(list(Path(tmp).glob('recordatorios-indice-1.ics')))
-            self.assertFalse((cli.REPO / 'index' / 'index.json').exists())
+            self.assertEqual(real.read_bytes() if real.exists() else None, before)
 
     def test_release_refuses_test_keys(self):
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
