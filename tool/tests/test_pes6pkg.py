@@ -459,6 +459,14 @@ class RunnerModes(unittest.TestCase):
         self.assertIn('  $ ', out.getvalue())  # en modo real se ve cada escritura
         self.assertEqual((Runner(True).mode, Runner(False).mode), (DRY, REAL))
 
+    def test_show(self):
+        from pes6pkg.ghcli import _show
+        long_dir = 'C:\\Users\\alguien\\AppData\\Local\\Temp\\una-carpeta-larga\\out\\translations\\1.0\\'
+        self.assertEqual(_show(['gh', 'release', 'create', 'v1', long_dir + 'PES6_Translations_DLL_v1.0.zip']),
+                         'gh release create v1 …PES6_Translations_DLL_v1.0.zip')
+        self.assertEqual(_show(['git', 'commit', '-m', 'Índice 2: 8 paquetes\n\n- uno']),
+                         'git commit -m "Índice 2: 8 paquetes…"')
+
     def test_gh_argv(self):
         """Lo que se le pide a gh 2.101 (docs/RECETA.md, "Qué hace cada paso"): borrador con un solo archivo, subir
         aparte, publicar con --draft=false, borrar con --yes; list/view/download/verify-asset son lecturas."""
@@ -1038,6 +1046,25 @@ class Publicar(unittest.TestCase):
         self.say(pub.index_add, ['translations@1.0', 'translation-ru@1.0'])
         entry = next(e for e in self.remote_index('publicar/indice-2')['packages'] if e['package'] == 'translation-ru')
         self.assertEqual(entry['archive']['sha256'], hashlib.sha256(ru).hexdigest())  # el índice apunta al combinado
+
+    def test_verify_live_con_un_idioma_que_trae_la_dll(self):
+        pub = self.pub()
+        for spec in ('translations@1.0', 'translation-ru@1.0'):
+            self.release(pub, spec)
+        self.say(pub.index_add, ['translations@1.0', 'translation-ru@1.0'])
+        self.merge('publicar/indice-2')
+        url = 'https://raw.githubusercontent.com/angelballay/pes6-package-pc/main/index/index.json'
+
+        def serve(u, limit):
+            if u in (url, url + '.minisig'):
+                return subprocess.run(['git', '-C', str(self.bare), 'show', 'main:index/' + u.rsplit('/', 1)[1]],
+                                      capture_output=True, check=True).stdout
+            return self.gh.public(u, limit)
+        out = io.StringIO()
+        with mock.patch.object(cli, '_download', serve), redirect_stdout(out), redirect_stderr(io.StringIO()):
+            cli.main(['--test-keys', 'verify-live', '--index-url', url, '--archives'])
+        self.assertIn('translation-ru 1.0: manifiesto bien, zip bien (trae adentro translations 1.0)', out.getvalue())
+        self.assertIn('translations 1.0: manifiesto bien, zip bien', out.getvalue())
 
     def test_idioma_con_una_dll_distinta_de_la_publicada(self):
         pub = self.pub()

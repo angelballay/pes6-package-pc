@@ -15,6 +15,7 @@ from .ghcli import DRY, LOCAL, REAL, Gh, Runner
 REPO = Path(__file__).resolve().parents[2]
 CENTRAL = publish.CENTRAL
 _check_dir = publish.check_dir
+TRANSLATIONS_ROUTE = ['translations', 'translation-*']  # los paquetes que acepta la vía de las traducciones (H-4)
 _download = publish.download
 ci_problems = publish.ci_problems
 BINARY_SUFFIXES = publish.BINARY_SUFFIXES
@@ -283,8 +284,15 @@ def cmd_verify_live(args):
         if args.archives:
             zb = _download(e['archive']['url'], verify.MAX_ARCHIVE)
             verify.check_bytes(zb, e['archive'])
-            verify.check_zip(zb, ring.keys, verify.State(revoked=ring.revoked_ids()), [e['package']])
-            line += ', zip bien'
+            # por la misma vía que el cliente: un idioma puede traer translations adentro
+            route = e['package'] == 'translations' or model.translation_code(e['package']) is not None
+            allowed = TRANSLATIONS_ROUTE if route else [e['package']]
+            res = verify.check_zip(zb, ring.keys, verify.State(revoked=ring.revoked_ids()), allowed)
+            own = [d for d, _ in res if d['package'] == e['package']]
+            if not own or own[0]['version'] != e['version']:
+                raise SystemExit(f'{e["package"]}: el zip no trae el manifiesto de {e["package"]} {e["version"]}')
+            inside = [f'{d["package"]} {d["version"]}' for d, _ in res if d['package'] != e['package']]
+            line += ', zip bien' + (f' (trae adentro {", ".join(inside)})' if inside else '')
         say(line)
 
 

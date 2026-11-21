@@ -7,12 +7,16 @@ REAL, DRY, LOCAL = 'real', 'simulado', 'local'
 
 
 def _show(argv):
-    """El comando en una línea, sin los textos largos (el cuerpo de un PR, las notas)."""
+    """El comando en una línea, sin los textos largos (el cuerpo de un PR, el mensaje de un commit). De una ruta larga
+    queda el nombre del archivo, que es lo que importa ver (por ejemplo, que el borrador nace solo con el zip)."""
     parts = []
     for a in argv:
         a = str(a)
-        if len(a) > 70 or '\n' in a:
+        if '\n' in a:
             a = (a.splitlines() or [''])[0][:40] + '…'
+        elif len(a) > 70:
+            name = a.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+            a = '…' + name if name != a and len(name) <= 70 else a[:40] + '…'
         parts.append(f'"{a}"' if ' ' in a else a)
     return ' '.join(parts)
 
