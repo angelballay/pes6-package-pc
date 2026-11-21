@@ -1,12 +1,10 @@
 """`pes6pkg`: armar, firmar, publicar y comprobar los paquetes de los mods de PES6 (design §8, docs/RECETA.md)."""
 import argparse
-import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -167,10 +165,12 @@ def cmd_build(args):
     if args.requires:
         req = [{'package': r.split('=')[0], 'min': r.split('=')[1]} for r in args.requires]
     out, info = package.build(REPO, args.package, args.version, args.from_dir, out_dir(args), sg, ring,
-                              args.released, args.recipes, req)
+                              args.released, args.recipes, req, args.bundle)
     say(f'Armado {out}:')
     say(f'  {info["archive"]["name"]}  {info["archive"]["size"]} bytes  SHA-256 {info["archive"]["sha256"]}')
     say(f'  {info["manifest"]["name"]} (+ .minisig)')
+    for b in info.get('bundles', []):
+        say(f'  adentro: {b["package"]} {b["version"]}, con su manifiesto y su firma de siempre')
     if ring.test:
         say('  OJO: firmado con claves de PRUEBA; `release` e `index add` solo lo usan en un simulacro local.')
 
@@ -418,6 +418,9 @@ def main(argv=None):
     b.add_argument('--released', help='AAAA-MM-DD (por defecto, hoy)')
     b.add_argument('--recipes', help='carpeta de recetas (por defecto ./packages o packages/ del repo central)')
     b.add_argument('--requires', nargs='*', help='paquete=versión mínima (reemplaza los de la receta)')
+    b.add_argument('--bundle', action='append', metavar='CARPETA',
+                   help='incluir un paquete ya armado (out\\<paquete>\\<versión>) tal cual, sin volver a firmarlo; '
+                        'por ejemplo translations dentro de un idioma. También: "bundles" en la receta')
     b.add_argument('--key', help='clave de uso (por defecto %%USERPROFILE%%\\.pes6pkg\\k1.key)')
     b.set_defaults(fn=cmd_build)
 

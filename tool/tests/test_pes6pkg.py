@@ -1,5 +1,6 @@
 """Pruebas de pes6pkg (solo biblioteca estándar): python -I tool/tests/test_pes6pkg.py"""
 import base64
+import hashlib
 import io
 import json
 import os
@@ -627,48 +628,144 @@ class CountingSigner:
         return self.inner.sign(data, comment)
 
 
-def recipes():
+def recipes(bundles=True, docs_dir=True):
+    """Las recetas del día como las de pes6xlife-translations: documentos en Docs/<paquete>/ y cada idioma con la DLL
+    adentro (`"bundles": ["translations"]`)."""
     def rel(tag, archive):
         return {'repo': REPO_T, 'tag': tag, 'archive': archive}
+
+    def doc(pkg):
+        return f'{model.DOCS_DIR}/{pkg}/README.txt' if docs_dir else 'README.txt'
     out = {'translations': {
         'recipe': 'pes6pkg-recipe/1', 'package': 'translations', 'name': 'PES6 Translations',
         'release': rel('dll-v{version}', 'PES6_Translations_DLL_v{version}.zip'),
         'requires': [{'package': 'hdtext', 'min': '1.0.2'}],
         'files': [{'path': 'Kitserver/translations.dll', 'install': True, 'pe_version': True},
-                  {'path': 'README.txt', 'install': False}]}}
+                  {'path': doc('translations'), 'install': False}]}}
     for code, name in (('ru', 'Русский'), ('el', 'Ελληνικά')):
-        out[f'translation-{code}'] = {
+        out[f'translation-{code}'] = dict({
             'recipe': 'pes6pkg-recipe/1', 'package': f'translation-{code}', 'name': name,
             'release': rel(f'{code}-v{{version}}', f'PES6_Translation_{code}_v{{version}}.zip'),
             'requires': [{'package': 'hdtext', 'min': '1.0.2'}, {'package': 'translations', 'min': '1.0'}],
-            'files': [{'path': f'dat/{code}_text.afs', 'install': True}, {'path': 'README.txt', 'install': False}]}
+            'files': [{'path': f'dat/{code}_text.afs', 'install': True},
+                      {'path': doc(f'translation-{code}'), 'install': False}]},
+            **({'bundles': ['translations']} if bundles else {}))
+    return out
+
+
+def write_recipes(folder: Path, **kw):
+    folder.mkdir(parents=True, exist_ok=True)
+    for pkg, r in recipes(**kw).items():
+        (folder / f'{pkg}.json').write_text(json.dumps(r, ensure_ascii=False), encoding='utf-8')
+    return folder
+
+
+def day_sources(tmp: Path, docs_dir=True, dll_version='1.0'):
+    """Las carpetas de --from de translations, ru y el (con la estructura del zip)."""
+    def put(root, rel, data):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(data)
+    out = {}
+    src = tmp / f'src-translations-{dll_version}'
+    put(src, 'Kitserver/translations.dll', fake_pe(dll_version))
+    put(src, f'{model.DOCS_DIR}/translations/README.txt' if docs_dir else 'README.txt', b'dll')
+    out['translations'] = src
+    for code in ('ru', 'el'):
+        s = tmp / f'src-{code}'
+        put(s, f'dat/{code}_text.afs', b'AFS\0' + code.encode() * 500)
+        put(s, f'{model.DOCS_DIR}/translation-{code}/README.txt' if docs_dir else 'README.txt', code.encode())
+        out[f'translation-{code}'] = s
     return out
 
 
 def build_day(tmp: Path, ring, out: Path):
-    """Los paquetes del día, armados con `ring` (y la clave de uso de prueba) en `out`."""
-    rec = tmp / 'recetas'
-    rec.mkdir(exist_ok=True)
-    for pkg, r in recipes().items():
-        (rec / f'{pkg}.json').write_text(json.dumps(r, ensure_ascii=False), encoding='utf-8')
+    """Los paquetes del día, armados con `ring` (y la clave de uso de prueba) en `out`: translations primero, porque
+    cada idioma la lleva adentro."""
+    rec = write_recipes(tmp / 'recetas')
     sg = signer.TestSigner(keys.load_test().signing[ring.keys[0].key_id])
-    src = tmp / 'src-translations'
-    (src / 'Kitserver').mkdir(parents=True)
-    (src / 'Kitserver' / 'translations.dll').write_bytes(fake_pe('1.0'))
-    (src / 'README.txt').write_text('dll')
-    todo = [('translations', '1.0', src, rec)]
-    for code in ('ru', 'el'):
-        s = tmp / f'src-{code}'
-        (s / 'dat').mkdir(parents=True)
-        (s / 'dat' / f'{code}_text.afs').write_bytes(b'AFS\0' + code.encode() * 500)
-        (s / 'README.txt').write_text(code)
-        todo.append((f'translation-{code}', '1.0', s, rec))
+    srcs = day_sources(tmp)
+    todo = [(p, '1.0', srcs[p], rec) for p in ('translations', 'translation-ru', 'translation-el')]
     if ring.test:
         hd_folder(tmp / 'src-hd', ring=ring)
         todo.append(('hdtext', '1.0.2', tmp / 'src-hd', None))
     with redirect_stdout(io.StringIO()):
         for pkg, ver, s, r in todo:
             package.build(cli.REPO, pkg, ver, s, out, sg, ring, '2026-12-05', recipes_dir=r)
+
+
+class Bundle(unittest.TestCase):
+    """build --bundle (o "bundles" en la receta): un paquete ya armado adentro de otro, sin volver a firmarlo."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='pes6pkg-bundle-'))
+        self.addCleanup(rm_tree, self.tmp)
+        self.ring = keys.load_test()
+        self.out = self.tmp / 'out'
+
+    def build(self, pkg, ver='1.0', rec=None, srcs=None, bundles=None, sg=None):
+        srcs = srcs or day_sources(self.tmp / f'src-{pkg}-{len(list(self.tmp.iterdir()))}')
+        sg = sg or CountingSigner(self.ring)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _, info = package.build(cli.REPO, pkg, ver, srcs[pkg], self.out, sg, self.ring, '2026-12-05',
+                                    recipes_dir=rec or write_recipes(self.tmp / 'recetas', bundles=False),
+                                    bundles=bundles)
+        return info, out.getvalue(), sg
+
+    def test_bundle_explicito(self):
+        self.build('translations')
+        dll = self.out / 'translations' / '1.0'
+        info, out, sg = self.build('translation-ru', bundles=[dll])
+        self.assertEqual(sg.n, 1)  # solo firma el manifiesto del idioma
+        self.assertEqual([(b['package'], b['version']) for b in info['bundles']], [('translations', '1.0')])
+        self.assertIn('incluye translations 1.0 tal cual', out)
+        zb = (self.out / 'translation-ru' / '1.0' / info['archive']['name']).read_bytes()
+        names = {e.name for e in verify.open_zip(zb)}
+        self.assertTrue({'Kitserver/translations.dll', 'Kitserver/pes6pkg/installed/translations.json',
+                         'Kitserver/pes6pkg/installed/translations.json.minisig', 'dat/ru_text.afs',
+                         'Docs/translation-ru/README.txt', 'Docs/translations/README.txt'} <= names)
+        # la firma de translations es la de su release, byte a byte
+        e = next(e for e in verify.open_zip(zb) if e.name == 'Kitserver/pes6pkg/installed/translations.json.minisig')
+        self.assertEqual(verify.read_entry(zb, e, e.usize), (dll / 'translations-1.0.manifest.json.minisig').read_bytes())
+        package.check_folder(self.out / 'translation-ru' / '1.0', self.ring, use_minisign=False)
+
+    def test_bundle_desde_la_receta(self):
+        rec = write_recipes(self.tmp / 'recetas-b', bundles=True)
+        with self.assertRaises(SystemExit) as e:
+            self.build('translation-ru', rec=rec)
+        self.assertIn('no hay ninguno armado', str(e.exception))
+        self.build('translations', rec=rec)
+        self.build('translations', '1.0.1', rec=rec, srcs=day_sources(self.tmp / 's101', dll_version='1.0.1'))
+        info, out, _ = self.build('translation-ru', rec=rec)
+        self.assertEqual(info['bundles'][0]['version'], '1.0.1')  # la más nueva armada
+        self.assertIn('incluyo translations 1.0.1', out)
+
+    def test_bundle_nombres_que_chocan(self):
+        rec = write_recipes(self.tmp / 'recetas-raiz', bundles=False, docs_dir=False)
+        srcs = day_sources(self.tmp / 'raiz', docs_dir=False)
+        self.build('translations', rec=rec, srcs=srcs)
+        with self.assertRaises(SystemExit) as e:
+            self.build('translation-ru', rec=rec, srcs=srcs, bundles=[self.out / 'translations' / '1.0'])
+        self.assertIn('README.txt está en translation-ru y en translations', str(e.exception))
+        self.assertIn('Docs/<paquete>/', str(e.exception))
+
+    def test_bundle_y_requires(self):
+        self.build('translations')
+        dll = self.out / 'translations' / '1.0'
+        rec = self.tmp / 'recetas-req'
+        write_recipes(rec, bundles=False)
+        r = json.loads((rec / 'translation-ru.json').read_text(encoding='utf-8'))
+        r['requires'] = [{'package': 'hdtext', 'min': '1.0.2'}, {'package': 'translations', 'min': '1.1'}]
+        (rec / 'translation-ru.json').write_text(json.dumps(r), encoding='utf-8')
+        with self.assertRaises(SystemExit) as e:
+            self.build('translation-ru', rec=rec, bundles=[dll])
+        self.assertIn('pide translations 1.1 o más nueva', str(e.exception))
+        r['requires'] = [{'package': 'hdtext', 'min': '1.0.2'}]
+        (rec / 'translation-ru.json').write_text(json.dumps(r), encoding='utf-8')
+        with self.assertRaises(SystemExit) as e:
+            self.build('translation-ru', rec=rec, bundles=[dll])
+        self.assertIn('no pide translations', str(e.exception))
+        self.assertFalse((self.out / 'translation-ru').exists())  # no se armó nada
 
 
 class Publicar(unittest.TestCase):
@@ -914,10 +1011,48 @@ class Publicar(unittest.TestCase):
 
     def test_aviso_si_falta_un_requisito(self):
         pub = self.pub()
+        self.release(pub, 'translations@1.0')  # publicada (va adentro del idioma), pero fuera del índice
         self.release(pub, 'translation-ru@1.0')
         out = self.say(pub.index_add, ['translation-ru@1.0'])
         self.assertIn('AVISO: translation-ru 1.0 pide translations 1.0 o más nueva', out)
         self.assertEqual(len(self.gh.prs), 1)  # avisa, no frena
+
+    # -- un idioma con translations adentro
+    def test_idioma_con_la_dll_adentro(self):
+        pub = self.pub()
+        # sin translations publicada, el idioma no se sube
+        msg, _ = self.fails(pub.release, 'translation-ru', '1.0', self.notes, False)
+        self.assertIn('trae translations 1.0 adentro, y dll-v1.0 no está publicado', msg)
+        self.assertIn('release translations 1.0 --no-index', msg)
+        self.assertEqual(self.gh.calls, [])
+        self.release(pub, 'translations@1.0')
+        self.assertIn('Trae adentro translations 1.0', self.release(pub, 'translation-ru@1.0'))
+        # el zip publicado del idioma: dos paquetes, la DLL con su manifiesto de siempre (sin volver a firmar)
+        ru = self.gh.found(REPO_T, 'ru-v1.0')['assets']['PES6_Translation_ru_v1.0.zip']
+        res = verify.check_zip(ru, self.ring.keys, verify.State(), ['translations', 'translation-*'])
+        self.assertEqual(sorted(d['package'] for d, _ in res), ['translation-ru', 'translations'])
+        dll_zip = self.gh.found(REPO_T, 'dll-v1.0')['assets']['PES6_Translations_DLL_v1.0.zip']
+        self.assertEqual({p: b for d, f in verify.check_zip(dll_zip, self.ring.keys, verify.State(), ['translations'])
+                          for p, b in f.items()},
+                         next(f for d, f in res if d['package'] == 'translations'))
+        self.say(pub.index_add, ['translations@1.0', 'translation-ru@1.0'])
+        entry = next(e for e in self.remote_index('publicar/indice-2')['packages'] if e['package'] == 'translation-ru')
+        self.assertEqual(entry['archive']['sha256'], hashlib.sha256(ru).hexdigest())  # el índice apunta al combinado
+
+    def test_idioma_con_una_dll_distinta_de_la_publicada(self):
+        pub = self.pub()
+        self.release(pub, 'translations@1.0')
+        r = self.gh.found(REPO_T, 'dll-v1.0')
+        r['assets']['translations-1.0.manifest.json'] = b'{}'  # lo publicado ya no es lo que el idioma trae
+        msg, _ = self.fails(pub.release, 'translation-ru', '1.0', self.notes, False)
+        self.assertIn('distinto del publicado', msg)
+        # y si translations se volvió a armar después del idioma, el idioma ya no sirve
+        with redirect_stdout(io.StringIO()):
+            package.build(cli.REPO, 'translations', '1.0', day_sources(self.tmp / 'otra')['translations'], self.out,
+                          signer.TestSigner(self.ring.signing[self.ring.keys[0].key_id]), self.ring, '2026-12-06',
+                          recipes_dir=self.tmp / 'recetas')
+        msg, _ = self.fails(pub.index_add, ['translation-ru@1.0'])
+        self.assertIn('se armó de nuevo después', msg)
 
     def test_entradas_invalidas(self):
         pub = self.pub()

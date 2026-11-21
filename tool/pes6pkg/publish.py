@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import index as index_mod
-from . import jsonr, model, package, reminders, signer, verify
+from . import jsonr, model, package, reminders, verify
 from .ghcli import REAL
 
 CENTRAL = 'angelballay/pes6-package-pc'
@@ -41,30 +41,7 @@ def confirm(prompt):
 
 # ---------------------------------------------------------------- un paquete armado
 
-def check_dir(folder: Path, ring, use_minisign=True):
-    """Comprueba `out/<paquete>/<versión>` como un cliente. Devuelve (build.json, manifiesto)."""
-    info = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
-    zb = (folder / info['archive']['name']).read_bytes()
-    mb = (folder / info['manifest']['name']).read_bytes()
-    ms = (folder / (info['manifest']['name'] + '.minisig')).read_text(encoding='utf-8')
-    verify.check_bytes(zb, info['archive'])
-    verify.check_bytes(mb, info['manifest'])
-    doc = verify.check_manifest(mb, ms, ring.keys, verify.State(revoked=ring.revoked_ids()), info['package'],
-                                info['version'])
-    res = verify.check_zip(zb, ring.keys, verify.State(revoked=ring.revoked_ids()), [info['package']])
-    inner = verify.read_entry(zb, next(e for e in verify.open_zip(zb)
-                                       if e.name == model.manifest_zip_path(info['package'])), len(mb))
-    if inner != mb:
-        raise verify.VerifyError('E_HASH', 'el manifiesto del zip no es el mismo que el asset')
-    if info['package'].startswith('translation-') and any(
-            p.lower() == 'kitserver/translations.dll' for _, files in res for p in files):
-        raise verify.VerifyError('E_PATH_NOT_ALLOWED', 'un zip de idioma no trae la DLL (cambio 1)')
-    exe = signer.find_minisign(required=False, pinned=False) if use_minisign else None
-    if exe and not ring.test:
-        if not signer.minisign_verify(exe, mb, ms, ring.active()):
-            raise verify.VerifyError('E_BAD_SIGNATURE', 'minisign -V no acepta la firma del manifiesto')
-        say('  minisign -V: la firma del manifiesto vale.')
-    return info, doc
+check_dir = package.check_folder  # comprueba out/<paquete>/<versión> como un cliente
 
 
 def asset_files(folder: Path, info):
@@ -80,6 +57,7 @@ class Built:
     files: list  # asset_files
     entry: dict  # su entrada del índice
     manifest: dict
+    bundled: list = field(default_factory=list)  # los paquetes que trae adentro (Built), ya armados y publicados aparte
 
     @property
     def spec(self):
@@ -380,7 +358,31 @@ class Publisher:
             if not model.url_allowed(u):
                 raise SystemExit(f'{package_id}: {u} no está entre las direcciones que aceptan los clientes '
                                  '(model.URL_PREFIXES). Revisá release.repo en la receta.')
-        return Built(info, folder, asset_files(folder, info), package.index_entry(info), manifest)
+        bundled = []
+        for x in info.get('bundles') or []:
+            bb = self.load(x['package'], x['version'])
+            if bb.info['manifest']['sha256'] != x['manifest']['sha256']:
+                raise SystemExit(f'{package_id} {version} trae {x["package"]} {x["version"]} adentro, pero {bb.folder} '
+                                 f'se armó de nuevo después (otro manifiesto): armá {package_id} otra vez.')
+            bundled.append(bb)
+        return Built(info, folder, asset_files(folder, info), package.index_entry(info), manifest, bundled)
+
+    def bundle_problems(self, b: Built):
+        """Lo que trae adentro (por ejemplo, translations dentro de un idioma) tiene que estar publicado e igual: si
+        no, un jugador tendría dos `translations 1.0` distintas."""
+        out = []
+        for bb in [] if self.offline else b.bundled:
+            st = self.state(bb)
+            if st.kind != PUBLISHED:
+                rel = self.cmd(f'release {bb.info["package"]} {bb.info["version"]} --no-index')
+                out.append(f'{b.label} trae {bb.label} adentro, y {bb.info["tag"]} no está publicado. Publicalo primero: '
+                           f'`{rel}`.')
+            else:
+                why = self.public_mismatch(bb)
+                if why:
+                    out.append(f'{b.label} trae {bb.label} adentro, distinto del publicado ({why}): armá {b.label} de '
+                               f'nuevo con el {bb.label} publicado.')
+        return out
 
     def state(self, b: Built):
         if self.offline:
@@ -515,6 +517,11 @@ class Publisher:
         repo, tag = b.info['repo'], b.info['tag']
         again = self.cmd(f'release {package_id} {version}' + ('' if with_index else ' --no-index'))
         say(f'{b.info["name"]} {version}: release {tag} en {repo}.')
+        for bb in b.bundled:
+            say(f'  Trae adentro {bb.label} (release {bb.info["tag"]}).')
+        problems = self.bundle_problems(b)
+        if problems:
+            raise SystemExit('\n'.join(problems))
         plan = self.plan([b]) if with_index else None
         if with_index and plan is None:
             say('Nada que hacer: ya está publicado y en el índice.')
@@ -612,6 +619,7 @@ class Publisher:
         for b in plan.builts:
             if self.offline:
                 break
+            problems += self.bundle_problems(b)
             st = self.state(b)
             rel = self.cmd(f'release {b.info["package"]} {b.info["version"]} --no-index')
             if st.kind == NONE:
