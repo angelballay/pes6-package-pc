@@ -123,6 +123,13 @@ class Model(unittest.TestCase):
         self.assertFalse(model.path_allowed('hdtext', 'Kitserver/pes6pkg/installed/hdtext.json'))
         self.assertTrue(model.path_allowed('hdtext', 'README.txt', install=False))
         self.assertFalse(model.path_allowed('hdtext', 'Kitserver/README.txt', install=False))
+        # documentos por carpeta: Docs/<id del paquete>/, un nivel, solo la propia
+        self.assertTrue(model.path_allowed('translation-ru', 'Docs/translation-ru/LEEME.txt', install=False))
+        self.assertTrue(model.path_allowed('translations', 'docs/TRANSLATIONS/README.md', install=False))
+        self.assertFalse(model.path_allowed('translation-ru', 'Docs/translations/README.txt', install=False))
+        self.assertFalse(model.path_allowed('translation-ru', 'Docs/translation-ru/sub/README.txt', install=False))
+        self.assertFalse(model.path_allowed('translation-ru', 'Docs/translation-ru/x.dll', install=False))
+        self.assertFalse(model.path_allowed('translation-ru', 'Docs/translation-ru/README.txt', install=True))
 
     def test_urls(self):
         self.assertTrue(model.url_allowed('https://github.com/angelballay/pes6-hd-text/releases/download/v1/x.zip'))

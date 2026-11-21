@@ -24,6 +24,7 @@ LANG_RE = re.compile(r'^[a-z]{2,3}(-[a-z]{2,4})?$')
 RESERVED = {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}
 ORIGINAL_LANGS = {'0', 'e', 'f', 'g', 'i', 'p', 's'}
 DOC_RE = re.compile(r'^[A-Za-z0-9._ -]{1,64}\.(txt|md)$')
+DOCS_DIR = 'Docs'  # documentos de un paquete: Docs/<paquete>/README.txt (install: false)
 
 # Direcciones permitidas (VER-1): compiladas también en el cliente.
 INDEX_URL = 'https://raw.githubusercontent.com/angelballay/pes6-package-pc/main/index/index.json'
@@ -131,7 +132,13 @@ def path_allowed(package, path, install=True):
     if not valid_path(path):
         return False
     if not install:
-        return '/' not in path and bool(DOC_RE.match(path))  # README, LEEME…: solo en la raíz del zip
+        # README, LEEME…: en la raíz del zip, o en Docs/<id del paquete>/ (un nivel, solo la carpeta del paquete),
+        # así no chocan los de dos paquetes que van en un mismo zip
+        parts = path.split('/')
+        if len(parts) == 1:
+            return bool(DOC_RE.match(path))
+        return (len(parts) == 3 and parts[0].lower() == DOCS_DIR.lower() and parts[1].lower() == package
+                and bool(DOC_RE.match(parts[2])))
     low = path.lower()
     if low.startswith('kitserver/pes6pkg/'):
         return False  # lo escribe solo el instalador
