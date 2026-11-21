@@ -160,6 +160,16 @@ class _Gen:
         self.man('man_tr_e.json', doc)
         self.case(name='una traducción que pisa un idioma original', kind='manifest', file='man_tr_e.json',
                   expect='E_PATH_NOT_ALLOWED')
+        for n, path, expect in (('ok', 'Docs/translation-ru/README.txt', 'OK'),
+                                ('otro', 'Docs/translations/README.txt', 'E_PATH_NOT_ALLOWED'),
+                                ('hondo', 'Docs/translation-ru/sub/README.txt', 'E_PATH_NOT_ALLOWED'),
+                                ('dll', 'Docs/translation-ru/x.dll', 'E_PATH_NOT_ALLOWED')):
+            doc = self.manifest_doc('translation-ru', '1.0', files=[
+                {'path': 'dat/ru_text.afs', 'size': 1, 'sha256': 'c' * 64, 'install': True},
+                {'path': path, 'size': 1, 'sha256': 'd' * 64, 'install': False}])
+            self.man(f'man_docs_{n}.json', doc)
+            self.case(name=f'documento en Docs/ ({n})', kind='manifest', file=f'man_docs_{n}.json',
+                      package='translation-ru', version='1.0', expect=expect)
         self.man('man_comment.json', self.manifest_doc(), model.manifest_comment('hdtext', '1.0.3'))
         self.case(name='comentario de otra versión', kind='manifest', file='man_comment.json', expect='E_BAD_COMMENT')
         doc = self.manifest_doc('pes6xlife-mods', '0.1', files=[
@@ -193,7 +203,8 @@ class _Gen:
     def package_entries(self, package, version, files, key=None, sign=True, requires=None):
         doc = {'type': model.MANIFEST_TYPE, 'schema': 1, 'package': package, 'name': 'X', 'version': version,
                'released': '2026-12-05', 'requires': requires or [],
-               'files': [{'path': p, 'size': len(d), 'sha256': _sha(d), 'install': '/' in p} for p, d in files]}
+               'files': [{'path': p, 'size': len(d), 'sha256': _sha(d),
+                          'install': '/' in p and not p.lower().startswith('docs/')} for p, d in files]}
         mb = jsonr.dumps(doc)
         mp = model.manifest_zip_path(package)
         out = list(files) + [(mp, mb)]
@@ -211,6 +222,22 @@ class _Gen:
         self.case(name='zip de la DLL de traducciones', kind='zip', file='zip_dll.zip', allowed=allowed, expect='OK')
         self.put('zip_lang.zip', self.zip_bytes(lang))
         self.case(name='zip de un idioma', kind='zip', file='zip_lang.zip', allowed=allowed, expect='OK')
+        # un idioma con la DLL adentro (dos paquetes en un zip), cada uno con sus documentos en Docs/<paquete>/
+        dll_d = self.package_entries('translations', '1.0', [('Kitserver/translations.dll', rnd),
+                                                             ('Docs/translations/README.txt', b'dll')])
+        lang_d = self.package_entries('translation-ru', '1.0', [('dat/ru_text.afs', text),
+                                                                ('Docs/translation-ru/README.txt', b'ru')])
+        self.put('zip_bundle.zip', self.zip_bytes(lang_d + dll_d))
+        self.case(name='idioma con la DLL incluida', kind='zip', file='zip_bundle.zip', allowed=allowed, expect='OK')
+        self.put('zip_bundle_hd.zip', self.zip_bytes(lang_d + dll_d))
+        self.case(name='idioma con la DLL incluida, por la vía de HD Text', kind='zip', file='zip_bundle_hd.zip',
+                  allowed=['hdtext'], expect='E_WRONG_PACKAGE')
+        both = self.package_entries('translations', '1.0', [('Kitserver/translations.dll', rnd), ('README.txt', b'a')])
+        self.put('zip_bundle_choque.zip', self.zip_bytes(
+            [e for e in both if e[0] != 'README.txt'] +
+            self.package_entries('translation-ru', '1.0', [('dat/ru_text.afs', text), ('README.txt', b'a')])))
+        self.case(name='dos paquetes con el mismo README en la raíz', kind='zip', file='zip_bundle_choque.zip',
+                  allowed=allowed, expect='E_ZIP')
         self.put('zip_stored.zip', self.zip_bytes(lang, zipfile.ZIP_STORED))
         self.case(name='zip sin comprimir', kind='zip', file='zip_stored.zip', allowed=allowed, expect='OK')
         self.put('zip_tiny.zip', self.zip_bytes(self.package_entries('translation-el', '1.0', [('dat/el_text.afs', b'a')])))

@@ -100,6 +100,14 @@ static void unit_tests() {
     check(!path_allowed("translation-ru", "dat/e_text.afs", true), "ru no pisa e_text");
     check(!path_allowed("translation-ru", "Kitserver/translations.dll", true), "idioma sin la DLL");
     check(!path_allowed("hdtext", "Kitserver/pes6pkg/installed/hdtext.json", true), "pes6pkg/ solo el instalador");
+    check(path_allowed("hdtext", "README.txt", false), "documento en la raíz");
+    check(path_allowed("translation-ru", "Docs/translation-ru/LEEME.txt", false), "documento en su carpeta");
+    check(path_allowed("translations", "docs/TRANSLATIONS/README.md", false), "Docs sin distinguir mayúsculas");
+    check(!path_allowed("translation-ru", "Docs/translations/README.txt", false), "documento en otra carpeta no");
+    check(!path_allowed("translation-ru", "Docs/translation-ru/sub/README.txt", false), "Docs: un solo nivel");
+    check(!path_allowed("translation-ru", "Docs/translation-ru/x.dll", false), "Docs: solo .txt y .md");
+    check(!path_allowed("translation-ru", "Docs/translation-ru/README.txt", true), "Docs no se instala");
+    check(!path_allowed("translation-ru", "Kitserver/README.txt", false), "documento en otra carpeta del juego no");
     check(path_allowed("hdtext", "README.txt", false) && !path_allowed("hdtext", "Kitserver/README.txt", false), "docs");
 
     const char* const* P = DEFAULT_URL_PREFIXES;

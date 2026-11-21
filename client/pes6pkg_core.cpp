@@ -460,9 +460,17 @@ bool valid_path(const std::string& path) {
     return true;
 }
 
+// Documentos (install: false): en la raíz del zip, o en Docs/<id del paquete>/ (un nivel, solo la carpeta del
+// paquete), así no chocan los de dos paquetes que van en un mismo zip.
+bool doc_path_ok(const std::string& package, const std::string& path) {
+    const auto parts = split(path, '/');
+    if (parts.size() == 1) return doc_name_ok(path);
+    return parts.size() == 3 && lower(parts[0]) == "docs" && lower(parts[1]) == package && doc_name_ok(parts[2]);
+}
+
 bool path_allowed(const std::string& package, const std::string& path, bool install) {
     if (!valid_path(path)) return false;
-    if (!install) return doc_name_ok(path);
+    if (!install) return doc_path_ok(package, path);
     const std::string low = lower(path);
     if (starts_with(low, "kitserver/pes6pkg/")) return false;  // lo escribe solo el instalador
     if (starts_with(package, "translation-")) {

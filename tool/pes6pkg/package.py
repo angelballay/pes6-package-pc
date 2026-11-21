@@ -133,7 +133,72 @@ def deterministic_zip(entries, released):
     return buf.getvalue()
 
 
-def build(repo, package, version, root, out_dir, signer, ring, released=None, recipes_dir=None, requires=None):
+def check_folder(folder: Path, ring, use_minisign=True):
+    """Comprueba `out/<paquete>/<versión>` como un cliente: el zip, su manifiesto y, si el zip trae otros paquetes
+    incluidos (`bundles` de build.json), que sean esos y con esos manifiestos. Devuelve (build.json, manifiesto)."""
+    info = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
+    zb = (folder / info['archive']['name']).read_bytes()
+    mb = (folder / info['manifest']['name']).read_bytes()
+    ms = (folder / (info['manifest']['name'] + '.minisig')).read_text(encoding='utf-8')
+    verify.check_bytes(zb, info['archive'])
+    verify.check_bytes(mb, info['manifest'])
+    doc = verify.check_manifest(mb, ms, ring.keys, verify.State(revoked=ring.revoked_ids()), info['package'],
+                                info['version'])
+    bundles = info.get('bundles') or []
+    want = sorted([info['package']] + [b['package'] for b in bundles])
+    res = verify.check_zip(zb, ring.keys, verify.State(revoked=ring.revoked_ids()), want)
+    got = sorted(d['package'] for d, _ in res)
+    if got != want:
+        raise verify.VerifyError('E_WRONG_PACKAGE', f'el zip trae {", ".join(got)}; build.json dice {", ".join(want)}')
+    entries = {e.name: e for e in verify.open_zip(zb)}
+    for b in [{'package': info['package'], 'manifest': info['manifest']}] + bundles:
+        e = entries[model.manifest_zip_path(b['package'])]
+        inner = verify.read_entry(zb, e, e.usize)
+        if hashlib.sha256(inner).hexdigest() != b['manifest']['sha256']:
+            raise verify.VerifyError('E_HASH', f'el manifiesto de {b["package"]} del zip no es el de build.json')
+    exe = None
+    if use_minisign and not ring.test:
+        from . import signer
+        exe = signer.find_minisign(required=False, pinned=False)
+    if exe and not signer.minisign_verify(exe, mb, ms, ring.active()):
+        raise verify.VerifyError('E_BAD_SIGNATURE', 'minisign -V no acepta la firma del manifiesto')
+    if exe:
+        print('  minisign -V: la firma del manifiesto vale.', flush=True)
+    return info, doc
+
+
+def bundle_from(folder: Path, ring):
+    """Un paquete ya armado para incluir en otro zip, sin volver a firmarlo: (build.json, [(entrada, bytes)])."""
+    folder = Path(folder)
+    if not (folder / 'build.json').exists():
+        raise BuildError(f'--bundle {folder}: no hay build.json (tiene que ser out\\<paquete>\\<versión> ya armado)')
+    try:
+        info, _ = check_folder(folder, ring, use_minisign=False)
+    except verify.VerifyError as e:
+        raise BuildError(f'--bundle {folder}: NO PASA ({e.code}): {e}')
+    if bool(info.get('test_keys')) != ring.test:
+        raise BuildError(f'--bundle {folder}: se armó con otras claves que este paquete')
+    if info.get('bundles'):
+        raise BuildError(f'--bundle {folder}: ese paquete ya incluye otros; no se anidan')
+    zb = (folder / info['archive']['name']).read_bytes()
+    return info, [(e.name, verify.read_entry(zb, e, e.usize)) for e in verify.open_zip(zb)]
+
+
+def find_bundle(out_dir: Path, package, ring):
+    """Para `"bundles"` en la receta sin --bundle: la versión más nueva armada en out/<paquete>/."""
+    base = Path(out_dir) / package
+    versions = [d.name for d in base.iterdir() if (d / 'build.json').exists() and model.parse_version(d.name)] \
+        if base.is_dir() else []
+    if not versions:
+        raise BuildError(f'La receta pide incluir {package}, y no hay ninguno armado en {base}: armalo antes, o pasá '
+                         f'--bundle <carpeta>.')
+    best = max(versions, key=model.parse_version)
+    print(f'  incluyo {package} {best} ({base / best}): la versión más nueva armada', flush=True)
+    return base / best
+
+
+def build(repo, package, version, root, out_dir, signer, ring, released=None, recipes_dir=None, requires=None,
+          bundles=None):
     if model.parse_version(version) is None:
         raise BuildError(f'Versión inválida: {version}')
     recipe = load_recipe(recipe_path(package, recipes_dir, repo), package)
@@ -146,13 +211,45 @@ def build(repo, package, version, root, out_dir, signer, ring, released=None, re
     check_binaries(files, version, ring)
     doc = manifest_doc(recipe, version, released, files)
     model.validate_manifest(doc)
+    mpath = model.manifest_zip_path(package)
+    # Paquetes incluidos (--bundle, o "bundles" en la receta): se comprueba todo antes de pedir la contraseña
+    dirs = [Path(b) for b in bundles or []]
+    have = set()
+    for d in dirs:
+        if (d / 'build.json').exists():
+            have.add(json.loads((d / 'build.json').read_text(encoding='utf-8')).get('package'))
+    dirs += [find_bundle(out_dir, p, ring) for p in recipe.get('bundles', []) if p not in have]
+    own = {p.lower() for p, _, _ in files} | {mpath.lower(), mpath.lower() + '.minisig'}
+    included, extra_entries = [], []
+    for d in dirs:
+        binfo, entries = bundle_from(d, ring)
+        bp = binfo['package']
+        if bp == package or any(i['package'] == bp for i in included):
+            raise BuildError(f'{bp} aparece dos veces en el paquete')
+        need = next((r['min'] for r in doc['requires'] if r['package'] == bp), None)
+        if need is None:
+            raise BuildError(f'{package} no pide {bp} en "requires": no lo incluyo (sumalo a la receta con su versión '
+                             'mínima)')
+        if model.compare_versions(binfo['version'], need) < 0:
+            raise BuildError(f'{package} pide {bp} {need} o más nueva, y {d} es la {binfo["version"]}')
+        for name, _ in entries:
+            if name.lower() in own:
+                raise BuildError(f'{name} está en {package} y en {bp}: un nombre por zip. Los documentos de cada '
+                                 f'paquete van en {model.DOCS_DIR}/<paquete>/ (packages/README.md).')
+            own.add(name.lower())
+        extra_entries += entries
+        included.append({'package': bp, 'version': binfo['version'], 'manifest': binfo['manifest'],
+                         'archive_sha256': binfo['archive']['sha256']})
+        print(f'  incluye {bp} {binfo["version"]} tal cual está armado (sin volver a firmarlo)', flush=True)
     mbytes = jsonr.dumps(doc)
     msig = signer.sign(mbytes, model.manifest_comment(package, version))
-    mpath = model.manifest_zip_path(package)
-    zbytes = deterministic_zip([(p, d) for p, d, _ in files] + [(mpath, mbytes), (mpath + '.minisig', msig.encode())],
-                               released)
-    # Comprobación como un cliente, con el llavero que firmó
-    verify.check_zip(zbytes, ring.keys, verify.State(revoked=ring.revoked_ids()), packages_allowed=[package])
+    zbytes = deterministic_zip([(p, d) for p, d, _ in files] + [(mpath, mbytes), (mpath + '.minisig', msig.encode())]
+                               + extra_entries, released)
+    # Comprobación como un cliente, con el llavero que firmó: todos los paquetes del zip
+    allowed = [package] + [i['package'] for i in included]
+    res = verify.check_zip(zbytes, ring.keys, verify.State(revoked=ring.revoked_ids()), packages_allowed=allowed)
+    if sorted(d['package'] for d, _ in res) != sorted(allowed):
+        raise BuildError('el zip armado no trae los paquetes esperados')
     out = Path(out_dir) / package / version
     out.mkdir(parents=True, exist_ok=True)
     archive = fmt(recipe['release']['archive'], version)
@@ -167,6 +264,8 @@ def build(repo, package, version, root, out_dir, signer, ring, released=None, re
         'manifest': {'name': mname, 'size': len(mbytes), 'sha256': hashlib.sha256(mbytes).hexdigest()},
         'test_keys': ring.test,
     }
+    if included:
+        info['bundles'] = included
     (out / 'build.json').write_text(json.dumps(info, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return out, info
 
