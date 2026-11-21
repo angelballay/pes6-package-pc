@@ -438,11 +438,17 @@ def cmd_web(args):
     if args.package != 'translations':
         mdoc = jsonr.loads((folder / info['manifest']['name']).read_bytes())
         need = next((r['min'] for r in mdoc['requires'] if r['package'] == 'translations'), None)
-        if need:
-            rows = [r for r in data.get('requirements', []) if r.get('mod') != 'pes6-translations']
+        # Con translations adentro del zip (bundles), el jugador no tiene que bajarla aparte: sin la fila, y se saca la
+        # que haya. Sin ella adentro, la fila dice qué versión hace falta.
+        inside = any(b['package'] == 'translations' for b in info.get('bundles') or [])
+        rows = [r for r in data.get('requirements', []) if r.get('mod') != 'pes6-translations']
+        if need and not inside:
             rows.append({'label': {'es': 'PES6 Translations', 'en': 'PES6 Translations'},
                          'value': {'es': f'{need} o más nueva', 'en': f'{need} or later'}, 'mod': 'pes6-translations'})
+        if 'requirements' in data or rows:
             data['requirements'] = rows
+        if inside:
+            say('  translations va adentro del zip: la página no lleva la fila de requisito de PES6 Translations.')
         hd = next((r['min'] for r in mdoc['requires'] if r['package'] == 'hdtext'), None)
         guide = web / 'translations' / 'guide.json'
         if hd and guide.exists() and hd not in guide.read_text(encoding='utf-8'):
