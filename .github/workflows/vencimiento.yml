@@ -1,0 +1,27 @@
+# PUB-10: avisos de vencimiento del índice, todos los días. Abre el issue asignado al dueño del repo, con su mención
+# (GitHub lo manda por correo), a los 30 días, lo comenta a los 21, 14, 7, 3 y 1 días y cada día después de vencido, y
+# lo cierra cuando main tiene el índice renovado. Se vuelve a habilitar en cada corrida: GitHub apaga los workflows
+# programados de un repo público tras 60 días sin actividad (design §8.3).
+name: vencimiento
+on:
+  schedule:
+    - cron: '17 12 * * *'  # 12:17 UTC (9:17 en Argentina)
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+  actions: write
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: avisos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -I tool/run.py reminders --repo "${{ github.repository }}" --owner "${{ github.repository_owner }}"

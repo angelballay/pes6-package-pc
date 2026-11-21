@@ -1,0 +1,16 @@
+{
+  "keys": [
+    {
+      "id": "1C86710EB4E0C2BB",
+      "file": "k1.pub",
+      "role": "uso",
+      "created": "2026-11-21"
+    },
+    {
+      "id": "E7A284B1D0502967",
+      "file": "k2.pub",
+      "role": "reserva",
+      "created": "2026-11-21"
+    }
+  ]
+}

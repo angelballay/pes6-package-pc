@@ -1,0 +1,39 @@
+# PUB-7: en cada PR y en main. Sin secretos: solo claves públicas.
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  pes6pkg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: minisign, para la segunda comprobación (-V)
+        run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: pruebas de la herramienta
+        run: python -I tool/tests/test_pes6pkg.py
+      - name: firma del índice, serial, vencimiento, manifiestos, lo publicado y sin binarios
+        run: python -I tool/run.py ci-check --base origin/main --online
+  cliente:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: compilar el verificador (Win32, CRT estático)
+        run: |
+          cmake -S client -B build/client -A Win32
+          cmake --build build/client --config Release
+      - name: vectores de prueba y pruebas
+        run: |
+          python -I tool/run.py --test-keys vectors --out build/vectors
+          build/client/Release/test_client.exe build/vectors

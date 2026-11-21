@@ -1,0 +1,13 @@
+# Binarios nunca al historial (PUB-1): los paquetes van como assets de los releases.
+out/
+build/
+*.zip
+*.dll
+*.exe
+*.afs
+*.bin
+*.key
+*.ics
+__pycache__/
+*.pyc
+client/pes6pkg_test_keys.h
