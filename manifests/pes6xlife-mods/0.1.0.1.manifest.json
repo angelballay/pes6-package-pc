@@ -1,0 +1,48 @@
+{
+  "type": "pes6pkg-manifest",
+  "schema": 1,
+  "package": "pes6xlife-mods",
+  "name": "pes6xlife mods",
+  "version": "0.1.0.1",
+  "released": "2026-11-23",
+  "requires": [],
+  "files": [
+    {
+      "path": "Kitserver/pes6xlife_mods.dll",
+      "size": 430592,
+      "sha256": "aabb6ccb7b9ccca9846dd27b06b35ec86669c1dca55cf4b780c27604bb6dc2e5",
+      "install": true
+    },
+    {
+      "path": "Kitserver/pes6xlife_mods.ini",
+      "size": 18504,
+      "sha256": "b642b74b39ea03a96744c59f827d38e8439e4be8d0963c72c14bca3ffca713dd",
+      "install": true,
+      "mode": "if-absent"
+    },
+    {
+      "path": "Docs/pes6xlife-mods/README.txt",
+      "size": 3980,
+      "sha256": "a294a6887c8b432f0fb2324bf1a829c27f451839f8c312bb000c026d7d9d03c8",
+      "install": false
+    },
+    {
+      "path": "Docs/pes6xlife-mods/settings.md",
+      "size": 19512,
+      "sha256": "ee377d6987c8409b0865ddb75245405795842c82320a783d28b25e5fe84de7db",
+      "install": false
+    },
+    {
+      "path": "Docs/pes6xlife-mods/master-league.md",
+      "size": 4142,
+      "sha256": "7a9979c41165ebd19177f647e121f0169a239bd1fff04d25f5cdfde9a290e5b8",
+      "install": false
+    },
+    {
+      "path": "Docs/pes6xlife-mods/long-repeats.md",
+      "size": 3068,
+      "sha256": "6644472769cdb0f5e50e8afaa0b811dc2cf78f362fbb5ef985ce7ec1891f4748",
+      "install": false
+    }
+  ]
+}
