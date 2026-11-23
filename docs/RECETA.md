@@ -12,7 +12,8 @@ menos, arriba de todo aparece un cartel con la fecha. Para ensayar sin tocar nad
 2. **Claves:** `pes6pkg keys new` y el PR de `keys/`. Las claves secretas nunca van a un repo.
 3. **Repo en GitHub:** creá `angelballay/pes6-package-pc` **público**, subí `main` y protegé `main` (Settings → Branches
    → regla para `main`: "Require a pull request before merging"). Activá 2FA en tu cuenta si no lo tenés.
-4. **Releases inmutables:** en `pes6-hd-text` y en `pes6xlife-translations`: Settings → General → Releases →
+4. **Releases inmutables:** en `pes6-hd-text`, en `pes6xlife-translations` y en `pes6xlife-releases`: Settings → General →
+   Releases →
    "Enable release immutability".
 5. **Avisos por correo:** en GitHub, Settings → Notifications → "Participating, @mentions and custom": tildá **Email**
    (viene así de fábrica). Ahí te llegan los avisos de vencimiento.
