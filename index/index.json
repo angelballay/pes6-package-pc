@@ -1,9 +1,9 @@
 {
   "type": "pes6pkg-index",
   "schema": 1,
-  "serial": 4,
-  "issued": "2026-11-23T15:49:50Z",
-  "expires": "2027-02-21T15:49:50Z",
+  "serial": 5,
+  "issued": "2026-11-23T17:48:04Z",
+  "expires": "2027-02-21T17:48:04Z",
   "packages": [
     {
       "package": "hdtext",
@@ -20,6 +20,23 @@
         "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2.1/PES6_HD_Text_v1.0.2.1.zip",
         "size": 47626110,
         "sha256": "8dd3e919e55682a853bab50aac8405d3e8f0fb760b875c57ce9edb1d23a7688f"
+      }
+    },
+    {
+      "package": "pes6xlife-mods",
+      "name": "pes6xlife mods",
+      "version": "0.1.0",
+      "released": "2026-11-23",
+      "notes": "https://github.com/angelballay/pes6xlife-releases/releases/tag/v0.1.0",
+      "manifest": {
+        "url": "https://github.com/angelballay/pes6xlife-releases/releases/download/v0.1.0/pes6xlife-mods-0.1.0.manifest.json",
+        "size": 1357,
+        "sha256": "3af79c25b1f8e116bc10d70dadb1c1eb74dc37bd562c77c2ad4f9010811d41df"
+      },
+      "archive": {
+        "url": "https://github.com/angelballay/pes6xlife-releases/releases/download/v0.1.0/pes6xlife_mods_v0.1.0.zip",
+        "size": 196717,
+        "sha256": "1495294feb9c0b29c1dab06226aa9143cd0e8d071272f3d4b65eaf544a03bc92"
       }
     },
     {
