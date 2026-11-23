@@ -1,25 +1,25 @@
 {
   "type": "pes6pkg-index",
   "schema": 1,
-  "serial": 3,
-  "issued": "2026-11-21T21:55:57Z",
-  "expires": "2027-02-19T21:55:57Z",
+  "serial": 4,
+  "issued": "2026-11-23T15:49:50Z",
+  "expires": "2027-02-21T15:49:50Z",
   "packages": [
     {
       "package": "hdtext",
       "name": "PES6 HD Text",
-      "version": "1.0.2",
-      "released": "2026-11-21",
-      "notes": "https://github.com/angelballay/pes6-hd-text/releases/tag/v1.0.2",
+      "version": "1.0.2.1",
+      "released": "2026-11-23",
+      "notes": "https://github.com/angelballay/pes6-hd-text/releases/tag/v1.0.2.1",
       "manifest": {
-        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2/hdtext-1.0.2.manifest.json",
-        "size": 14937,
-        "sha256": "3b91c796f98e0a75bbe972d011b8b52d1ff3313a83188cd46d1b5574fed82beb"
+        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2.1/hdtext-1.0.2.1.manifest.json",
+        "size": 14939,
+        "sha256": "3946c0722149b0232e8e99ccb19dfa2b1750a5a141e5cf73f350ce7fa8da6cec"
       },
       "archive": {
-        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2/PES6_HD_Text_v1.0.2.zip",
-        "size": 47624535,
-        "sha256": "b09cd7564aba163f3d8f617de90dcce0b4410173e566742ee8bffe63908fcf38"
+        "url": "https://github.com/angelballay/pes6-hd-text/releases/download/v1.0.2.1/PES6_HD_Text_v1.0.2.1.zip",
+        "size": 47626110,
+        "sha256": "8dd3e919e55682a853bab50aac8405d3e8f0fb760b875c57ce9edb1d23a7688f"
       }
     },
     {
