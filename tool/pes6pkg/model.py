@@ -32,6 +32,7 @@ URL_PREFIXES = (
     'https://raw.githubusercontent.com/angelballay/pes6-package-pc/',
     'https://github.com/angelballay/pes6-hd-text/releases/download/',
     'https://github.com/angelballay/pes6xlife-translations/releases/download/',
+    'https://github.com/angelballay/pes6xlife-releases/releases/download/',
 )
 
 

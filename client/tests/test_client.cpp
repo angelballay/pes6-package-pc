@@ -113,7 +113,11 @@ static void unit_tests() {
     const char* const* P = DEFAULT_URL_PREFIXES;
     check(url_allowed("https://github.com/angelballay/pes6-hd-text/releases/download/v1/x.zip", P, DEFAULT_URL_PREFIX_COUNT),
           "dirección permitida");
+    check(url_allowed("https://github.com/angelballay/pes6xlife-releases/releases/download/v0.1.0/x.zip", P,
+                      DEFAULT_URL_PREFIX_COUNT),
+          "releases de pes6xlife-mods");
     for (const char* u : {"https://example.com/x.zip", "http://github.com/angelballay/pes6-hd-text/releases/download/x",
+                          "https://github.com/angelballay/pes6xlife-releases/archive/x.zip",
                           "https://github.com/angelballay/pes6-hd-text/releases/download/x.zip?y=1",
                           "https://user@github.com/angelballay/pes6-hd-text/releases/download/x"})
         check(!url_allowed(u, P, DEFAULT_URL_PREFIX_COUNT), std::string("dirección no permitida: ") + u);
